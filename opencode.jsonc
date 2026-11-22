@@ -1,0 +1,40 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    "superpowers@git+https://github.com/obra/superpowers.git#v7.0.2"
+  ],
+  "mcp": {
+    "servers": {
+      "dart": {
+        "type": "local",
+        "command": [
+          "dart",
+          "mcp-server"
+        ]
+      },
+      "maestro": {
+        "type": "local",
+        "command": [
+          "maestro",
+          "mcp"
+        ]
+      },
+      "playwright": {
+        "type": "local",
+        "command": [
+          "npx",
+          "--yes",
+          "@playwright/mcp@0.0.86"
+        ]
+      },
+      "chrome-devtools": {
+        "type": "local",
+        "command": [
+          "npx",
+          "--yes",
+          "chrome-devtools-mcp@1.13.0"
+        ]
+      }
+    }
+  }
+}

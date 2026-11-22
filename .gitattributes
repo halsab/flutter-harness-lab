@@ -1,0 +1,3 @@
+
+# Keep third-party skills unchanged.
+.agents/skills/** -whitespace
