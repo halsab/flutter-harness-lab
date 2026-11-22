@@ -20,6 +20,17 @@ When working as `build`, explicitly delegate substantive upfront design or compl
 
 Do not assume that switching between primary `plan` and `build` in an existing OpenCode session switches the selected model: session model selection is sticky. For reliable routing use named subagents, or start separate sessions with the intended model and reasoning variant. A configured model is not a verified model call; check actual tool outputs and session/model selection.
 
+## Safety and approval
+
+Follow the project's `permissions` in `opencode.jsonc`. External paths,
+Git pushes and potentially destructive shell operations require approval.
+Never try alternate shell commands, MCP tools or APIs to bypass a denied
+action. Never merge PRs, force-push or publish a release on the user's behalf.
+An approval prompt from OpenCode is not the same as a GitHub branch-protection
+rule; the owner reviews merges. The `architect` and `reviewer` subagents
+may inspect files and read-only Git history but must not edit or run builds.
+The `build` agent performs tests and reports actual tool output.
+
 ## Workflow
 
 1. For v0, start from a newly created default Flutter SDK project. Inspect its baseline and read `.flutter-harness/config.json`; do not assume Web is enabled. Do not attempt legacy-project migration or retrofit.
