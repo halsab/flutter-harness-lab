@@ -59,6 +59,22 @@
       "model": "openai/gpt-6-luna#low"
     }
   },
+  "providers": {
+    "openai": {
+      "models": {
+        "gpt-6.2-sol": {
+          "settings": {
+            "reasoningEffort": "medium"
+          }
+        },
+        "gpt-6-luna": {
+          "settings": {
+            "reasoningEffort": "high"
+          }
+        }
+      }
+    }
+  },
   "plugins": [
     "superpowers@git+https://github.com/obra/superpowers.git#v7.0.2"
   ],
