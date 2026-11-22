@@ -1,5 +1,80 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "model": "openai/gpt-6-luna",
+  "default_agent": "build",
+  "agents": {
+    "build": {
+      "model": "openai/gpt-6-luna#high"
+    },
+    "plan": {
+      "model": "openai/gpt-6.2-sol#medium"
+    },
+    "architect": {
+      "description": "Analyze requirements, architecture, trade-offs and difficult bugs before implementation. Read-only planning; return a concise, actionable design.",
+      "mode": "subagent",
+      "model": "openai/gpt-6.2-sol#medium",
+      "permissions": [
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        }
+      ]
+    },
+    "reviewer": {
+      "description": "Review code changes and tests for correctness, regressions and unnecessary complexity. Report actionable findings without editing files.",
+      "mode": "subagent",
+      "model": "openai/gpt-6.2-sol#medium",
+      "permissions": [
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        }
+      ]
+    },
+    "general": {
+      "model": "openai/gpt-6-luna#medium"
+    },
+    "explore": {
+      "model": "openai/gpt-6-luna#low"
+    },
+    "compaction": {
+      "model": "openai/gpt-6-luna#low"
+    },
+    "title": {
+      "model": "openai/gpt-6-luna#low"
+    },
+    "summary": {
+      "model": "openai/gpt-6-luna#low"
+    }
+  },
+  "providers": {
+    "openai": {
+      "models": {
+        "gpt-6.2-sol": {
+          "settings": {
+            "reasoningEffort": "medium"
+          }
+        },
+        "gpt-6-luna": {
+          "settings": {
+            "reasoningEffort": "high"
+          }
+        }
+      }
+    }
+  },
   "plugins": [
     "superpowers@git+https://github.com/obra/superpowers.git#v7.0.2"
   ],
