@@ -22,7 +22,27 @@
         {
           "action": "shell",
           "resource": "*",
-          "effect": "ask"
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git status *",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git diff *",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git show *",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git log *",
+          "effect": "allow"
         }
       ]
     },
@@ -39,7 +59,27 @@
         {
           "action": "shell",
           "resource": "*",
-          "effect": "ask"
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "git status *",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git diff *",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git show *",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git log *",
+          "effect": "allow"
         }
       ]
     },
@@ -111,5 +151,62 @@
         ]
       }
     }
-  }
+  },
+  "permissions": [
+    {
+      "action": "external_directory",
+      "resource": "*",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "git push *",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "git push --force*",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "git push -f *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "gh pr merge *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "gh api *",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "gh release create *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "flutter pub publish *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "git reset --hard *",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "git clean -fd*",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "rm -rf *",
+      "effect": "ask"
+    }
+  ]
 }
