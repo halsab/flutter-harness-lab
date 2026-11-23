@@ -37,6 +37,36 @@ iOS and Web UI tests remain the local agent's responsibility. CI also validates
 OpenCode routing, installed Harness scripts and permission guardrails.
 Hosted CI does not run device simulators or personal authentication.
 
+## Browser/device verification after the third-trial failure
+
+The task-filter PR (#8) reported Flutter Web Chrome debugger failure and
+contained no Android/iOS Maestro outcomes. GitHub CI format/analyze/test PASS
+does not prove device E2E. A new Web preview starts an ordinary loopback HTTP
+server from a Flutter release build, avoiding the Chrome debug-service
+connection entirely:
+
+```sh
+python3 .flutter-harness/bin/web-preview.py start
+# Use printed URL with Playwright MCP; assert the filter in the real UI
+python3 .flutter-harness/bin/web-preview.py stop
+```
+
+Run Android and iOS Maestro regardless of the Web outcome. Record local
+results with target, tool, assertions, and actual evidence reference in
+`.flutter-harness/verification.json` and verify them:
+
+```sh
+python3 .flutter-harness/bin/verify-e2e.py .flutter-harness/verification.json --profile mobile-web
+```
+
+The gate requires all three platforms to report PASS before calling
+verification complete. If a platform fails or is unavailable, the PR must
+be **draft** and document limitations. The report checker only validates
+completeness, not whether an LLM-reported result is true; inspect OpenCode
+session tool calls when reviewing. Lab CI also checks that Flutter feature
+PR descriptions disclose all three platform statuses, without running
+expensive hosted emulators.
+
 ## Workflow
 
 1. Give the agent an outcome-focused request in interactive OpenCode. It asks
