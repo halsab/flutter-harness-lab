@@ -77,6 +77,3 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
-      - name: Build Web when manually requested
-        if: github.event_name == 'workflow_dispatch'
-        run: flutter build web
