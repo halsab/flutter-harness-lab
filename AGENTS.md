@@ -29,5 +29,15 @@ actions and relaunch; do not adjust assertions to accidental duplicate text.
 Report separate Android/iOS/Web PASS/FAIL/BLOCKED/SKIPPED with evidence and
 specific blockers. Avoid repeated failing tool loops. Always attempt push and PR into app after implementation; request push
 approval, never bypass denials, and never merge a PR automatically.
+Use python3 .flutter-harness/bin/web-preview.py start for Web Playwright: it
+builds/serves Flutter Web on a local random port without the Chrome debugger.
+Do not use flutter run -d chrome as the Web E2E test server. HTTP READY is not
+browser E2E PASS. Android, iOS and Web checks run independently even when one
+fails; never skip mobile because Web fails. Record Android/iOS/Web evidence in
+.flutter-harness/verification.json (local/ignored), run verify-e2e.py before
+the PR; missing or unverified platform results mean INCOMPLETE, so create
+a DRAFT PR with limitations and do not claim verified DONE.
+PR description must include Android: STATUS — evidence, iOS: STATUS — evidence,
+Web: STATUS — evidence, even when one platform is BLOCKED/FAIL/SKIPPED.
 Do not update golden baselines without owner approval.
 <!-- flutter-harness:end -->
