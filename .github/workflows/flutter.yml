@@ -116,11 +116,7 @@ jobs:
           statuses = {}
           for line in os.getenv('PR_BODY', '').splitlines():
               match = re.match(
-                  r'^\s*(?:[-*]\s*)?(Android|iOS|Web)\s*:\s*(PASS|FAIL|BLOCKED|SKIPPED)\s*[—:-]\s*(\S.*)
-      - run: dart format --output=none --set-exit-if-changed lib test
-      - run: flutter analyze
-      - run: flutter test
-,
+                  r'^\s*(?:[-*]\s*)?(Android|iOS|Web)\s*:\s*(PASS|FAIL|BLOCKED|SKIPPED)\s*[—:-]\s*(\S.*)$',
                   line, flags=re.I,
               )
               if match:
@@ -129,7 +125,7 @@ jobs:
           missing = sorted(required - statuses.keys())
           if missing:
               print('FAIL feature PR lacks platform statuses and evidence:', ', '.join(missing))
-              print('Use Android: PASS — <device/tool evidence>, iOS: ..., Web: ...')
+              print('Use Android: PASS — device/tool evidence, iOS: ..., Web: ...')
               raise SystemExit(1)
           if any(status != 'PASS' for status in statuses.values()) and os.getenv('PR_DRAFT') != 'true':
               print('FAIL incomplete platform E2E requires a DRAFT PR')
