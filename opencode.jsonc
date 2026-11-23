@@ -115,7 +115,11 @@
       }
     }
   },
-  "plugins": [],
+  "plugins": [
+    "-superpowers",
+    "-superpowers.*",
+    "-superpowers@git+https://github.com/obra/superpowers.git#v7.0.2"
+  ],
   "mcp": {
     "servers": {
       "dart": {
