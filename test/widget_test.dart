@@ -42,6 +42,63 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('filters tasks without changing their saved status', (
+    tester,
+  ) async {
+    final filterRepository = _EditableTaskRepository([
+      const TaskItem(id: 'active', title: 'Active task'),
+      const TaskItem(
+        id: 'completed',
+        title: 'Completed task',
+        isCompleted: true,
+      ),
+    ]);
+    await tester.pumpWidget(MyApp(repository: filterRepository));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Active task'), findsOneWidget);
+    expect(find.text('Completed task'), findsOneWidget);
+
+    await tester.tap(find.text('Активные'));
+    await tester.pumpAndSettle();
+    expect(find.text('Active task'), findsOneWidget);
+    expect(find.text('Completed task'), findsNothing);
+
+    await tester.tap(find.text('Завершённые'));
+    await tester.pumpAndSettle();
+    expect(find.text('Active task'), findsNothing);
+    expect(find.text('Completed task'), findsOneWidget);
+
+    await tester.tap(find.text('Все'));
+    await tester.pumpAndSettle();
+    expect(find.text('Active task'), findsOneWidget);
+    expect(find.text('Completed task'), findsOneWidget);
+    expect(filterRepository.tasks.map((task) => task.isCompleted), [
+      false,
+      true,
+    ]);
+  });
+
+  testWidgets('shows a helpful empty state for an empty filter', (
+    tester,
+  ) async {
+    final filterRepository = _EditableTaskRepository([
+      const TaskItem(
+        id: 'completed',
+        title: 'Completed task',
+        isCompleted: true,
+      ),
+    ]);
+    await tester.pumpWidget(MyApp(repository: filterRepository));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Активные'));
+    await tester.pumpAndSettle();
+    expect(find.text('Нет активных задач'), findsOneWidget);
+    expect(find.text('Completed task'), findsNothing);
+    expect((await filterRepository.loadTasks()).single.isCompleted, isTrue);
+  });
+
   testWidgets('adds, completes, persists, and deletes tasks at narrow width', (
     tester,
   ) async {
