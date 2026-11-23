@@ -1,52 +1,41 @@
 ---
 name: flutter-harness
-description: Use when developing, testing, diagnosing or preparing a PR for a Flutter project with Flutter Harness installed.
+description: Build, verify and deliver Flutter features from short user requests with minimal approvals and bounded tool use.
 ---
 
-# Flutter Harness
+# Flutter Harness — default delivery workflow
 
-Use Superpowers for planning, TDD, debugging and review; use official Flutter/Dart tools for source and runtime diagnosis. Maestro is for mobile UI exploration and repeatable flows. If the profile includes Web, use Playwright for browser E2E and Chrome DevTools for diagnostics.
+The user specifies **outcomes**, not commands, agent roles, branch strategy or test plans. Act as the delivery owner. Read `.flutter-harness/config.json` for the mobile/mobile-web profile. Keep replies brief and focus on product decisions and final evidence, not internal plans or tool transcripts.
 
-## OpenCode model routing
+## One product checkpoint, not several
 
-The project `opencode.jsonc` selects models and reasoning effort by agent:
-- `build` uses GPT-6 Luna high for implementation, debugging, running tests and preparing a PR.
-- `plan` and the `architect` subagent use GPT-6.2 Sol medium for design, trade-offs, acceptance criteria and difficult diagnosis.
-- The `reviewer` subagent uses GPT-6.2 Sol medium for an independent code/test review before a PR. Use focused reviews rather than repeatedly reviewing unchanged files.
-- `explore` uses GPT-6 Luna low for repository search; `general` uses Luna medium for routine delegated work.
-- `compaction`, `title` and `summary` use Luna low for maintenance work.
+- Clarify only **material** questions that change behavior, architecture, security, privacy, data ownership, integration, ongoing cost or product scope (e.g. local-only tasks versus cross-device sync). Ask one focused question at a time. Never ask the owner to select a package, class layout, worktree, test runner or agent execution style.
+- For substantial ambiguous features, present **one short design summary** (user-visible behavior, important tradeoffs, key exclusions) and obtain approval. Approval of that design is permission to plan and implement the agreed scope. **No second approval of a technical plan or of execution method.** A clearly scoped straightforward request can proceed without a design checkpoint.
+- If new information materially changes the approved design, ask for a targeted decision. Otherwise pick conventional, reversible defaults and proceed. Protect secrets, privacy, production actions and expensive/irreversible operations with explicit consent.
 
-When working as `build`, explicitly delegate substantive upfront design or complex diagnosis to `architect`; use `reviewer` for a focused final review. Follow Superpowers for the actual planning, implementation and verification process. Do not use Sol for mechanical file search, formatting or simple tool invocations. Never silently raise Sol reasoning above medium.
+## Delivery sequence (do not stop halfway)
 
-Do not assume that switching between primary `plan` and `build` in an existing OpenCode session switches the selected model: session model selection is sticky. For reliable routing use named subagents, or start separate sessions with the intended model and reasoning variant. A configured model is not a verified model call; check actual tool outputs and session/model selection.
+1. Inspect `git status`, the current branch and project configuration. For sequential tasks, **use a feature branch in the current checkout** from the integration branch (`app` in Flutter Harness Lab, otherwise the repository's documented integration branch). Reuse an existing task branch. Do not ask branch versus worktree. Do not reset, stash, overwrite or stage unrelated changes, including local `opencode.jsonc`. If a real dirty-worktree conflict or concurrent session makes the checkout unsafe, describe that specific blocker.
+2. Derive acceptance criteria from the agreed behavior. Make a **concise internal plan**; small tasks do not need long `docs/superpowers` files or a second user approval. Implement in coherent increments with focused tests. Prefer standard Flutter/Dart facilities and minimal maintained dependencies.
+3. Run `bash .flutter-harness/bin/check.sh . standard <profile>` for repeatable format, analyzer and widget/unit checks (read the profile from `.flutter-harness/config.json`). Use `quick` for feedback during development and `full` only when relevant builds are required; never confuse a successful build with UI E2E. Keep the machine-readable result TSV as local verification evidence. Keep hosted CI lightweight: never add Android emulators, iOS simulators or browser E2E solely because a local agent skipped a check. For mobile UI checks, first run `bash .flutter-harness/bin/maestro.sh --check`, then `bash .flutter-harness/bin/maestro.sh test <flow.yaml>`. On a `mobile-web` profile, verify affected Web behavior with **Playwright**, not Maestro Web. Discover locally available Android/iOS devices, and run **Maestro mobile** scenarios for affected flows. Create reusable scenarios where useful; device/browser E2E is the local agent's responsibility, not unconditional GitHub CI. Check UI state **after** actions (not input-field text masquerading as a saved row); test persistence after relaunch where requested. Record Android/iOS/Web outcomes as PASS / FAIL / BLOCKED / SKIPPED with evidence or a specific reason. Unavailable devices are BLOCKED; SKIPPED is for irrelevant checks. Never claim unrun tests passed. GitHub CI does not prove local iOS runs.
+4. Obtain **one independent, fresh-context final review** of the *whole task diff against its integration base* (use the merge base, not just `git diff HEAD`), plus task-related staged, unstaged and untracked files. Exclude unrelated local work. Give the read-only `reviewer` requirements and acceptance criteria, but not the author's confidence claims, implementation plan or earlier review conclusions. For each material finding require a file/location, plausible failure scenario, impact, evidence and explicit assumptions; reject unsupported or cosmetic opinions. Have `build`, not `reviewer`, fix accepted Critical/Important findings with focused regression checks. If a high-risk fix materially changes behavior, permit **one targeted independent recheck** (not five whole-diff rounds); otherwise finish with a concise self-check. Reviewer must not edit files, commit or spawn agents. Report review **PASSED** only if accepted material findings are resolved and relevant checks passed; otherwise mark it **OPEN** and list unresolved findings/checks honestly. A PR may document BLOCKED platform checks, but an incomplete review must never be presented as passed.
+5. Commit only task files on the feature branch; attempt `git push` and create a **PR into the integration branch** (`app` for the lab) with changes, key test results and any limitations. A user request to build the feature includes preparing a PR; **do not ask again whether to make the PR**. Git push/external paths remain approval-gated by OpenCode permissions; request permission through the tool and honor denial. Never merge, force-push, publish or change golden image baselines without explicit owner approval.
+6. After creating the PR, run `bash .flutter-harness/bin/verify-pr.sh . <integration-branch>` to confirm it is OPEN against the correct base. This verifier is read-only and never pushes or creates a PR. Before saying DONE, verify the PR exists and links to the right base. If push/PR is blocked, report **BLOCKED with the exact next required action** instead of calling a local commit completed delivery. Do not repeat the full plan in chat.
 
-## Safety and approval
+## Model and context budget (soft policy, not a hard quota)
 
-Follow the project's `permissions` in `opencode.jsonc`. External paths,
-Git pushes and potentially destructive shell operations require approval.
-Never try alternate shell commands, MCP tools or APIs to bypass a denied
-action. Never merge PRs, force-push or publish a release on the user's behalf.
-An approval prompt from OpenCode is not the same as a GitHub branch-protection
-rule; the owner reviews merges. The `architect` and `reviewer` subagents
-may inspect files and read-only Git history but must not edit or run builds.
-The `build` agent performs tests and reports actual tool output.
+- `build` on **GPT-6 Luna medium** is the default implementer and orchestrator. Use Luna low for cheap search and Luna medium for routine reviews. Do not choose high reasoning by default.
+- `architect` uses **GPT-6.2 Sol medium** only for genuinely complex architecture or hard diagnosis. Prefer at most **one** targeted Sol consultation per small feature; do not call it reflexively. `reviewer` uses Luna medium and performs one bounded final diff review.
+- Use `explore` on **Luna low** as a one-off read-only Code Scout only when an unfamiliar, multi-module codebase would require broad exploration. Ask for a compact code map with paths, symbols, callers, relevant tests and explicit gaps; verify the relevant files yourself before implementing. For a focused change or small app, search directly instead of creating another agent.
+- Use each tool for its intended job. **MCP servers expose tool schemas in model context**; avoid unnecessary server/tool discovery, full-file dumps and repeated log reads. Chrome DevTools is optional and disabled by default for the Web profile; Playwright handles regular Web checks.
+- After **two unsuccessful attempts at the same UI/tool approach**, inspect one concise diagnostic and switch to a better tool or report a clear blocker. Do not loop on Maestro Web/Flutter Canvas text selectors, unsupported key codes, simulator restarts, hot-restart transport errors or indefinite run commands. Bound command timeouts reasonably; do not mistake a truncated run for a successful test.
+- Keep status updates to meaningful decisions, a real blocker and final results. Do not narrate every thought or run multiple full reviews. Prefer targeted fixes and tests to repeated full validation cycles.
+- These are behavioral policies, **not enforced token caps or billing guarantees**. Track actual token counts from sanitized OpenCode session exports using the harness session-usage script; compare sessions before claiming savings.
 
-## Workflow
+## Superpowers compatibility
 
-1. For v0, start from a newly created default Flutter SDK project. Inspect its baseline and read `.flutter-harness/config.json`; do not assume Web is enabled. Do not attempt legacy-project migration or retrofit.
-2. Agree scope and acceptance criteria with the human, then create a feature branch before implementation. Never commit to main.
-3. Implement in small, verified increments, committing each meaningful milestone.
-4. Prefer official Flutter/Dart commands and the harness scripts over ad hoc shell commands.
-5. Use stable Flutter `Semantics(identifier: ...)` for critical UI selectors.
-6. Save Maestro exploration as reusable YAML flows and rerun via CLI.
-7. Record PASS, FAIL, SKIPPED and BLOCKED separately. Never claim unexecuted tests passed.
-8. For changes to accepted golden screenshots, obtain explicit human approval first; don't silently update baselines.
-9. Review the diff and push the feature branch. Open a PR with summary, plan, checkpoint commits, tests, platform evidence and blocked checks.
-10. Never auto-merge, publish/store-release or use production secrets.
+The *default* autonomous OpenCode profile intentionally does **not** load the upstream Superpowers plugin. Its `brainstorming` and `writing-plans` skills include mandatory design/plan approvals and execution-choice handoffs that conflict with the owner's one-checkpoint workflow and produced repeated, lengthy agent loops in the first lab feature trial. **Do not pretend to override or bypass those upstream skill contracts.** Upstream Superpowers remains an optional, separately selected **interactive** workflow, whose approval rules must then be honored. Reuse good ideas (focused TDD, systematic debugging and verification) in this first-party autonomous policy; do not vendor Superpowers.
 
-## Bootstrap checks
+## Safety
 
-Until the Dart CLI ships, run:
-`bash /path/to/flutter-harness/scripts/check.sh /path/to/project [quick|standard|full] [mobile|mobile-web]`
-
-Make no claim of successful verification without actual command output.
+Respect project `permissions`, tool approval prompts and GitHub branch rulesets. Denied actions stay denied; do not route through another shell command, API, MCP or subagent to bypass them. `architect` and `reviewer` are read-only. Never fabricate test output, PR existence, a platform run, a saved-state observation, model costs or exact token savings. On a single-turn `opencode run`, a permission or material design question can terminate the turn: report the blocked next step and continue in an interactive OpenCode session when the user responds.

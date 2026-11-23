@@ -4,13 +4,13 @@
   "default_agent": "build",
   "agents": {
     "build": {
-      "model": "openai/gpt-6-luna#high"
+      "model": "openai/gpt-6-luna#medium"
     },
     "plan": {
       "model": "openai/gpt-6.2-sol#medium"
     },
     "architect": {
-      "description": "Analyze requirements, architecture, trade-offs and difficult bugs before implementation. Read-only planning; return a concise, actionable design.",
+      "description": "Consult ONLY for genuinely complex architecture or hard diagnosis. Answer one focused question concisely, then return to the Luna implementer. Read-only.",
       "mode": "subagent",
       "model": "openai/gpt-6.2-sol#medium",
       "permissions": [
@@ -47,9 +47,9 @@
       ]
     },
     "reviewer": {
-      "description": "Review code changes and tests for correctness, regressions and unnecessary complexity. Report actionable findings without editing files.",
+      "description": "Perform ONE independent read-only review of the task diff against its integration base, including new task files. Report material failures with file, scenario, impact and evidence; no edits, cosmetic-only findings or repeated full reviews.",
       "mode": "subagent",
-      "model": "openai/gpt-6.2-sol#medium",
+      "model": "openai/gpt-6-luna#medium",
       "permissions": [
         {
           "action": "edit",
@@ -109,14 +109,16 @@
         },
         "gpt-6-luna": {
           "settings": {
-            "reasoningEffort": "high"
+            "reasoningEffort": "medium"
           }
         }
       }
     }
   },
   "plugins": [
-    "superpowers@git+https://github.com/obra/superpowers.git#v7.0.2"
+    "-superpowers",
+    "-superpowers.*",
+    "-superpowers@git+https://github.com/obra/superpowers.git#v7.0.2"
   ],
   "mcp": {
     "servers": {
@@ -129,10 +131,8 @@
       },
       "maestro": {
         "type": "local",
-        "command": [
-          "maestro",
-          "mcp"
-        ]
+        "command": ["bash", ".flutter-harness/bin/maestro.sh", "mcp"],
+        "cwd": "."
       },
       "playwright": {
         "type": "local",
@@ -148,7 +148,8 @@
           "npx",
           "--yes",
           "chrome-devtools-mcp@1.13.0"
-        ]
+        ],
+        "disabled": true
       }
     }
   },
@@ -207,6 +208,36 @@
       "action": "shell",
       "resource": "rm -rf *",
       "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "brainstorming",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "writing-plans",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "executing-plans",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "subagent-driven-development",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "using-git-worktrees",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "finishing-a-development-branch",
+      "effect": "deny"
     }
   ]
 }
