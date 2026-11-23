@@ -20,9 +20,16 @@ risk or explicitly requested E2E; only necessary platforms, limited retries.
 Normalize app state before UI assertions; hidden by a filter is not missing.
 The legacy verify-e2e.py helper is optional, not an ordinary delivery gate.
 
-Self-review the task diff once. Independent read-only reviewer only for
-material security/data migration/privacy/architecture/concurrency risk or
-explicit request; no repeated reviews. Report actual checks honestly,
+Before the standard check/PR, review the task diff ONCE against the
+requirements and ensure important NEW behavior is asserted by a focused unit
+or widget test; passing old tests alone is not enough. For sorting, test
+ascending, descending, default order and state not being persisted. No tests
+for trivial labels or styling. Use one bounded read-only reviewer when a
+change intersects multiple existing features (sort/search/filter), critical
+security/data/concurrency/architecture risk or when explicitly requested.
+No reviewer loops. Keep main.dart limited to app bootstrap and use a feature
+folder for growing UI/transformation logic, without needless dependencies.
+Refactor an existing monolith in focused work separate from an unrelated PR. Report actual checks honestly,
 mark unneeded E2E NOT RUN (not required). A genuinely required failed check
 or material unresolved issue means Draft. Push with tool approval, create PR
 into app, never auto-merge, force-push or change golden baselines.
