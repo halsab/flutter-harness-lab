@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+test.use({ screenshot: 'only-on-failure', trace: 'retain-on-failure' });
+
 const baseURL = process.env.WEB_E2E_BASE_URL ?? 'http://127.0.0.1:8080';
 const taskTitle = 'Playwright web task';
 
