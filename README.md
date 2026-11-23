@@ -9,7 +9,7 @@ generated using the official Flutter SDK.
   iOS and Web. **Keep this branch clean** for reproducible fresh-start checks.
 - `app` — the same initial counter application, plus Flutter Harness integration:
   OpenCode V2 model routing, Superpowers, MCP definitions, project instructions
-  and 24 official Flutter/Dart skills. Future app features arrive through
+  and 24 official Flutter/Dart skills. The default profile now uses a lean\nfirst-party autonomous agent workflow, rather than loading Superpowers'\nmandatory interactive planning approvals. Future app features arrive through
   feature branches and human-reviewed PRs into `app`.
 
 The installer and baseline are documented in
@@ -33,17 +33,24 @@ simulators or validate personal ChatGPT authentication.
 
 ## Workflow
 
-1. Update `app`, verify a clean worktree and create a feature branch from it.
-2. Use Luna for coding and targeted Sol medium subagents for planning/review.
-3. Test the code; run Android/iOS/Web UI checks when relevant and record
-   PASS, FAIL, BLOCKED or SKIPPED with actual evidence.
-4. Commit to the feature branch and open a PR targeting `app`.
-5. **The owner reviews and merges**. The agent never merges or approves
-   golden baseline changes.
+1. Give the agent an outcome-focused request in interactive OpenCode. It asks
+   only material product/architecture/security questions, requesting at most
+   one short design signoff if necessary.
+2. The agent chooses a feature branch in the current checkout from `app`,
+   plans internally, and implements. No second plan approval, worktree choice
+   or execution-mode question.
+3. Luna medium drives implementation. A fresh-context Luna medium reviewer
+   checks the final diff once (one targeted recheck for high-risk fixes);
+   consult Sol medium only for hard architecture or diagnosis.
+4. Run Flutter tests/analyze, Maestro on Android/iOS, and Playwright on Web;
+   report real per-platform PASS/FAIL/BLOCKED/SKIPPED evidence.
+5. Automatically attempt push and a PR targeting `app`, honoring the
+   separate tool permission prompt. **The owner reviews and merges**.
+   No automatic PR merge or golden baseline acceptance.
 
 OpenCode `permissions` require approval for external paths and Git pushes,
 while denying common merges, force pushes and publishing operations.
 These are *not a sandbox*; configure repository-side branch protection too.
-See [model routing and safety](https://github.com/halsab/flutter-harness/blob/main/docs/model-routing.md).
+Default profile disables Chrome DevTools MCP until needed to reduce the\nregular tool surface. It does not uninstall tools or assert exact token\nsavings. Use the harness session-usage script to measure model/tool usage.\nFor an optional interactive design process, upstream Superpowers may still\nbe enabled separately.\nSee [model routing and safety](https://github.com/halsab/flutter-harness/blob/main/docs/model-routing.md).
 
 Installing into existing or legacy Flutter projects remains out of scope for v0.
