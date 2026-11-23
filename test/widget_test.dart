@@ -102,6 +102,41 @@ void main() {
     expect((await filterRepository.loadTasks()).single.isCompleted, isTrue);
   });
 
+  testWidgets('searches titles case-insensitively and combines with filters', (
+    tester,
+  ) async {
+    final searchRepository = _EditableTaskRepository([
+      const TaskItem(id: 'active', title: 'Buy Milk'),
+      const TaskItem(id: 'completed', title: 'MILK the cow', isCompleted: true),
+      const TaskItem(id: 'other', title: 'Read a book'),
+    ]);
+    await tester.pumpWidget(MyApp(repository: searchRepository));
+    await tester.pumpAndSettle();
+
+    final search = find.bySemanticsIdentifier('task-search');
+    await tester.enterText(search, 'milk');
+    await tester.pump();
+    expect(find.text('Buy Milk'), findsOneWidget);
+    expect(find.text('MILK the cow'), findsOneWidget);
+    expect(find.text('Read a book'), findsNothing);
+    expect(find.text('Незавершённых задач: 2'), findsOneWidget);
+
+    await tester.tap(find.text('Завершённые'));
+    await tester.pumpAndSettle();
+    expect(find.text('Buy Milk'), findsNothing);
+    expect(find.text('MILK the cow'), findsOneWidget);
+    expect(find.text('Незавершённых задач: 2'), findsOneWidget);
+
+    await tester.enterText(search, 'missing');
+    await tester.pump();
+    expect(find.text('Задачи не найдены'), findsOneWidget);
+    expect((await searchRepository.loadTasks()).map((task) => task.title), [
+      'Buy Milk',
+      'MILK the cow',
+      'Read a book',
+    ]);
+  });
+
   testWidgets('adds, completes, persists, and deletes tasks at narrow width', (
     tester,
   ) async {
@@ -122,7 +157,7 @@ void main() {
     await tester.tap(find.bySemanticsIdentifier('add-task'));
     await tester.pumpAndSettle();
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
       isEmpty,
     );
 
@@ -209,7 +244,10 @@ void main() {
     final delayedRepository = _DelayedTaskRepository();
     await tester.pumpWidget(MyApp(repository: delayedRepository));
 
-    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).enabled,
+      isFalse,
+    );
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNull,
@@ -221,7 +259,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Saved before startup'), findsOneWidget);
-    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).enabled,
+      isTrue,
+    );
   });
 
   testWidgets('shows retry after storage initialization fails', (tester) async {
@@ -254,7 +295,7 @@ void main() {
 
     expect(find.text('Не удалось сохранить задачи'), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
       'Retry this task',
     );
     expect(find.byType(Checkbox), findsNothing);
@@ -266,7 +307,7 @@ void main() {
     expect(flakyRepository.tasks.single.title, 'Retry this task');
     expect(find.byType(Checkbox), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
       isEmpty,
     );
   });
@@ -328,7 +369,7 @@ void main() {
     expect(delayedRepository.startedTitles, ['First write']);
     expect(delayedRepository.tasks, hasLength(1));
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
       isEmpty,
     );
   });

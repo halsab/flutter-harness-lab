@@ -41,6 +41,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   var _isLoading = true;
   var _loadFailed = false;
   var _taskFilter = _TaskFilter.all;
+  var _searchQuery = '';
   final _pendingAddTitles = <String>{};
   Future<void> _pendingWrites = Future<void>.value();
 
@@ -165,12 +166,15 @@ class _TaskListScreenState extends State<TaskListScreen> {
   @override
   Widget build(BuildContext context) {
     final activeTaskCount = _tasks.where((task) => !task.isCompleted).length;
+    final normalizedSearchQuery = _searchQuery.trim().toLowerCase();
     final visibleTasks = _tasks.where((task) {
-      return switch (_taskFilter) {
+      final matchesFilter = switch (_taskFilter) {
         _TaskFilter.all => true,
         _TaskFilter.active => !task.isCompleted,
         _TaskFilter.completed => task.isCompleted,
       };
+      return matchesFilter &&
+          task.title.toLowerCase().contains(normalizedSearchQuery);
     }).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Мои задачи')),
@@ -215,6 +219,21 @@ class _TaskListScreenState extends State<TaskListScreen> {
                     ),
                     const SizedBox(height: 20),
                     if (!_isLoading && !_loadFailed) ...[
+                      Semantics(
+                        identifier: 'task-search',
+                        child: TextField(
+                          textInputAction: TextInputAction.search,
+                          onChanged: (query) =>
+                              setState(() => _searchQuery = query),
+                          decoration: const InputDecoration(
+                            labelText: 'Поиск задач',
+                            hintText: 'Введите название задачи',
+                            prefixIcon: Icon(Icons.search),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
                         children: [
@@ -249,6 +268,12 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       ),
                       if (_tasks.isEmpty)
                         const SizedBox(height: 240, child: _EmptyTasks())
+                      else if (visibleTasks.isEmpty &&
+                          normalizedSearchQuery.isNotEmpty)
+                        const SizedBox(
+                          height: 200,
+                          child: Center(child: Text('Задачи не найдены')),
+                        )
                       else if (visibleTasks.isEmpty)
                         SizedBox(
                           height: 200,
