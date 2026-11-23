@@ -27,6 +27,7 @@ void main() {
 
     expect(find.text('Задач пока нет'), findsOneWidget);
     expect(find.text('Добавьте первую задачу'), findsOneWidget);
+    expect(find.text('Незавершённых задач: 0'), findsOneWidget);
 
     final input = find.bySemanticsIdentifier('task-input');
     await tester.tap(find.bySemanticsIdentifier('add-task'));
@@ -58,6 +59,7 @@ void main() {
 
     expect(find.text('Active task'), findsOneWidget);
     expect(find.text('Completed task'), findsOneWidget);
+    expect(find.text('Незавершённых задач: 1'), findsOneWidget);
 
     await tester.tap(find.text('Активные'));
     await tester.pumpAndSettle();
@@ -68,6 +70,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Active task'), findsNothing);
     expect(find.text('Completed task'), findsOneWidget);
+    expect(find.text('Незавершённых задач: 1'), findsOneWidget);
 
     await tester.tap(find.text('Все'));
     await tester.pumpAndSettle();

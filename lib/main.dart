@@ -164,6 +164,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final activeTaskCount = _tasks.where((task) => !task.isCompleted).length;
     final visibleTasks = _tasks.where((task) {
       return switch (_taskFilter) {
         _TaskFilter.all => true,
@@ -238,22 +239,31 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         height: 200,
                         child: _TaskLoadError(onRetry: _loadTasks),
                       )
-                    else if (_tasks.isEmpty)
-                      const SizedBox(height: 240, child: _EmptyTasks())
-                    else if (visibleTasks.isEmpty)
-                      SizedBox(
-                        height: 200,
-                        child: _EmptyFilteredTasks(filter: _taskFilter),
-                      )
-                    else
-                      for (final task in visibleTasks)
-                        _TaskRow(
-                          task: task,
-                          onToggle: (isCompleted) =>
-                              _setTaskCompleted(task, isCompleted),
-                          onEdit: () => _editTask(task),
-                          onDelete: () => _deleteTask(task),
+                    else ...[
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'Незавершённых задач: $activeTaskCount',
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
+                      ),
+                      if (_tasks.isEmpty)
+                        const SizedBox(height: 240, child: _EmptyTasks())
+                      else if (visibleTasks.isEmpty)
+                        SizedBox(
+                          height: 200,
+                          child: _EmptyFilteredTasks(filter: _taskFilter),
+                        )
+                      else
+                        for (final task in visibleTasks)
+                          _TaskRow(
+                            task: task,
+                            onToggle: (isCompleted) =>
+                                _setTaskCompleted(task, isCompleted),
+                            onEdit: () => _editTask(task),
+                            onDelete: () => _deleteTask(task),
+                          ),
+                    ],
                   ],
                 ),
               ),
