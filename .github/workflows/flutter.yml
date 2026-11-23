@@ -60,6 +60,8 @@ jobs:
               '-superpowers@git+https://github.com/obra/superpowers.git#v7.0.2',
           ]
           assert c['mcp']['servers']['chrome-devtools']['disabled'] is True
+          assert c['mcp']['servers']['maestro']['command'] == ['bash', '.flutter-harness/bin/maestro.sh', 'mcp']
+          assert c['mcp']['servers']['maestro']['cwd'] == '.'
           blocked_skills = {'brainstorming', 'writing-plans', 'executing-plans',
                             'subagent-driven-development', 'using-git-worktrees',
                             'finishing-a-development-branch'}
@@ -68,7 +70,10 @@ jobs:
           print('PASS lab OpenCode config and safeguards')
           PY
       - name: Check installed Harness scripts
-        run: bash -n .flutter-harness/bin/maestro.sh .flutter-harness/bin/check.sh .flutter-harness/bin/verify-pr.sh
+        run: |
+          for script in .flutter-harness/bin/maestro.sh .flutter-harness/bin/check.sh .flutter-harness/bin/verify-pr.sh; do
+            bash -n "$script"
+          done
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
