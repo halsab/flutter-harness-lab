@@ -42,6 +42,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   var _loadFailed = false;
   var _taskFilter = _TaskFilter.all;
   var _searchQuery = '';
+  var _taskSort = _TaskSort.defaultOrder;
   final _pendingAddTitles = <String>{};
   Future<void> _pendingWrites = Future<void>.value();
 
@@ -176,6 +177,18 @@ class _TaskListScreenState extends State<TaskListScreen> {
       return matchesFilter &&
           task.title.toLowerCase().contains(normalizedSearchQuery);
     }).toList();
+    switch (_taskSort) {
+      case _TaskSort.defaultOrder:
+        break;
+      case _TaskSort.ascending:
+        visibleTasks.sort(
+          (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+        );
+      case _TaskSort.descending:
+        visibleTasks.sort(
+          (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()),
+        );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Мои задачи')),
       body: SafeArea(
@@ -247,6 +260,26 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      DropdownButtonFormField<_TaskSort>(
+                        initialValue: _taskSort,
+                        decoration: const InputDecoration(
+                          labelText: 'Сортировка',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final sort in _TaskSort.values)
+                            DropdownMenuItem(
+                              value: sort,
+                              child: Text(sort.label),
+                            ),
+                        ],
+                        onChanged: (sort) {
+                          if (sort != null) {
+                            setState(() => _taskSort = sort);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
                     ],
                     if (_isLoading)
                       const SizedBox(
@@ -306,6 +339,16 @@ enum _TaskFilter {
   completed('Завершённые');
 
   const _TaskFilter(this.label);
+
+  final String label;
+}
+
+enum _TaskSort {
+  defaultOrder('По умолчанию'),
+  ascending('А–Я'),
+  descending('Я–А');
+
+  const _TaskSort(this.label);
 
   final String label;
 }
