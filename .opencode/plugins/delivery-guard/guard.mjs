@@ -33,7 +33,12 @@ export function decide(before, current, intent, prOK, prMessage) {
   if (!didWork && !intent) return { active: false, passed: true, reasons: [] };
   const reasons = [];
   if (["app", "main", "master", ""].includes(current.branch)) reasons.push("Create a feature branch; never commit onto the integration branch");
-  if (current.status !== before.status) reasons.push("Uncommitted task changes remain (preserve preexisting unrelated changes)");
+  // A feature may start with uncommitted edits and end clean after committing them.
+  // An unchanged pre-existing dirty worktree is also not newly unfinished work.
+  // Only flag a *currently dirty* worktree that differs from the initial state.
+  if (current.status && current.status !== before.status) {
+    reasons.push("New or changed uncommitted work remains (preserve unrelated preexisting changes)");
+  }
   if (!didWork && intent) reasons.push("No task change was recorded in this session");
   if (!prOK) reasons.push("PR missing or invalid: " + prMessage);
   return { active: true, passed: reasons.length === 0, reasons };
