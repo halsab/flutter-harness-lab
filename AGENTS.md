@@ -26,4 +26,10 @@ explicit request; no repeated reviews. Report actual checks honestly,
 mark unneeded E2E NOT RUN (not required). A genuinely required failed check
 or material unresolved issue means Draft. Push with tool approval, create PR
 into app, never auto-merge, force-push or change golden baselines.
+
+A project OpenCode V2 delivery guard checks Git state before normal session
+completion. If a feature is not on a feature branch with a verified open PR
+at local HEAD, it may continue the session up to twice, then reports INCOMPLETE.
+It never commits or pushes itself, and never bypasses push permission prompts.
+Never claim DONE after only code checks without an open PR.
 <!-- flutter-harness:end -->

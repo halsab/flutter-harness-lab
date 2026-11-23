@@ -94,6 +94,12 @@ jobs:
               ast.parse(source.read_text(encoding='utf-8'), filename=str(source))
           print('PASS local E2E helper syntax')
           PY
+      - name: Validate OpenCode V2 delivery guard files
+        run: |
+          test -f .opencode/plugins/delivery-guard/index.js
+          test -f .opencode/plugins/delivery-guard/guard.mjs
+          node --check .opencode/plugins/delivery-guard/index.js
+          node --check .opencode/plugins/delivery-guard/guard.mjs
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
