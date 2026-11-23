@@ -36,6 +36,11 @@
         },
         {
           "action": "shell",
+          "resource": "git merge-base *",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
           "resource": "git show *",
           "effect": "allow"
         },
@@ -47,7 +52,7 @@
       ]
     },
     "reviewer": {
-      "description": "Perform ONE independent read-only review of the task diff against its integration base, including new task files. Report material failures with file, scenario, impact and evidence; no edits, cosmetic-only findings or repeated full reviews.",
+      "description": "Perform ONE independent read-only review of the entire task diff and new task files. Use separate allowed Git commands (status, merge-base, diff) without shell chaining or substitution; use read for files. If full diff cannot be inspected, report OPEN, not PASSED. Findings need file, failure scenario, impact and evidence; no edits or repeated full reviews.",
       "mode": "subagent",
       "model": "openai/gpt-6-luna#medium",
       "permissions": [
@@ -69,6 +74,11 @@
         {
           "action": "shell",
           "resource": "git diff *",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "git merge-base *",
           "effect": "allow"
         },
         {

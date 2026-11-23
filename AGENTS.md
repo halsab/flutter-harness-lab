@@ -11,14 +11,23 @@ a technical plan, branch/worktree choice, execution style or routine library.
 Choose a feature branch in this checkout from app by default. Preserve and
 do not stage unrelated local changes (including opencode.jsonc).
 Use Luna medium for implementation and ordinary independent review; reserve
-Sol medium for difficult architecture/diagnosis. Use Luna-low explore only
-for broad unfamiliar-code search; skip it for small or focused changes.
-Review the full task diff against app (including new task files), requiring
-concrete failure scenarios and evidence. One fresh-context review; allow
-one targeted recheck only for a material high-risk fix.
-Use Flutter tests/analyze, Maestro on mobile, Playwright on Web, and honest
-per-platform PASS/FAIL/BLOCKED/SKIPPED outcomes. Avoid repeated failing tool
-loops. Always attempt push and PR into app after implementation; request push
+Sol medium for difficult architecture/diagnosis. OpenCode can persist a
+session-specific High variant despite Medium in the config: check the active
+variant in the new session and audit actual usage from its export.
+Use Luna-low explore only for broad unfamiliar-code search; skip it for small
+or focused changes.
+Review the full task diff against app (including new task files). Reviewer
+runs permitted Git status, merge-base and diff commands separately (no shell
+chaining or substitutions), and reads files with read, not cat. Permission
+denials or inaccessible diff coverage mean review OPEN, never PASSED. Require
+evidence-backed failure scenarios; one fresh-context review, one targeted
+recheck only for a material high-risk fix.
+Discover Android and iOS devices. If the iOS Simulator is booted and visible,
+run affected Maestro UI scenarios on it **as well as** Android. iOS build is
+not iOS Maestro. Use Playwright on Web. Assert exact expected text after
+actions and relaunch; do not adjust assertions to accidental duplicate text.
+Report separate Android/iOS/Web PASS/FAIL/BLOCKED/SKIPPED with evidence and
+specific blockers. Avoid repeated failing tool loops. Always attempt push and PR into app after implementation; request push
 approval, never bypass denials, and never merge a PR automatically.
 Do not update golden baselines without owner approval.
 <!-- flutter-harness:end -->
