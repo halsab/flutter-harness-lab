@@ -1,0 +1,45 @@
+appId: dev.halsab.flutter_harness_lab
+name: My Tasks Android mobile scenario
+---
+- stopApp
+- clearState
+- launchApp
+- extendedWaitUntil:
+    visible: "Задач пока нет"
+    timeout: 15000
+- assertVisible: "Мои задачи"
+- tapOn:
+    id: task-input
+- inputText: "Maestro Android task"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "Maestro Android task"
+    timeout: 10000
+- assertNotVisible:
+    id: task-input
+    text: "Maestro Android task"
+- assertNotVisible: "Задач пока нет"
+- tapOn:
+    id: "complete-.*"
+- assertVisible:
+    id: "complete-.*"
+    checked: true
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Maestro Android task"
+    timeout: 10000
+- assertVisible:
+    id: "complete-.*"
+    checked: true
+- tapOn:
+    id: "delete-.*"
+- extendedWaitUntil:
+    visible: "Задач пока нет"
+    timeout: 10000
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Задач пока нет"
+    timeout: 10000
+- assertNotVisible: "Maestro Android task"
