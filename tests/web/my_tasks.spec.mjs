@@ -21,9 +21,9 @@ test('add, complete, persist, delete and persist deletion in Flutter Web', async
 
   const input = page.getByRole('textbox');
   const addButton = page.getByRole('button', { name: 'Добавить задачу' });
-  const savedTask = page.locator('flt-semantics[aria-label*="' + taskTitle + '"]');
+  const savedTask = page.getByText(taskTitle, { exact: true });
 
-  await expect(page.locator('flt-semantics[aria-label*="Задач пока нет"]')).toBeVisible();
+  await expect(page.getByText('Задач пока нет', { exact: true })).toBeVisible();
 
   await input.click();
   // Give Flutter's semantic text editor a frame to attach its input listener.
@@ -34,7 +34,7 @@ test('add, complete, persist, delete and persist deletion in Flutter Web', async
   // A task still sitting in the input must not count as a successful add.
   await expect(input).toBeEmpty();
   await expect(savedTask).toBeVisible();
-  await expect(page.locator('flt-semantics[aria-label*="Задач пока нет"]')).toHaveCount(0);
+  await expect(page.getByText('Задач пока нет', { exact: true })).toHaveCount(0);
 
   const completed = page.getByRole('checkbox');
   await expect(completed).toHaveCount(1);
@@ -48,10 +48,10 @@ test('add, complete, persist, delete and persist deletion in Flutter Web', async
 
   await page.getByRole('button', { name: 'Удалить задачу' }).click();
   await expect(savedTask).toHaveCount(0);
-  await expect(page.locator('flt-semantics[aria-label*="Задач пока нет"]')).toBeVisible();
+  await expect(page.getByText('Задач пока нет', { exact: true })).toBeVisible();
 
   await page.reload();
   await enableFlutterSemantics(page);
   await expect(savedTask).toHaveCount(0);
-  await expect(page.locator('flt-semantics[aria-label*="Задач пока нет"]')).toBeVisible();
+  await expect(page.getByText('Задач пока нет', { exact: true })).toBeVisible();
 });
