@@ -102,6 +102,22 @@ void main() {
       expect(restored.single.isCompleted, isTrue);
     });
 
+    test('renames a task durably without changing completion', () async {
+      await repository.saveTasks([
+        const TaskItem(
+          id: 'shared-task',
+          title: 'Old title',
+          isCompleted: true,
+        ),
+      ]);
+
+      await repository.renameTask('shared-task', '  New title  ');
+      final restored = await repository.loadTasks();
+
+      expect(restored.single.title, 'New title');
+      expect(restored.single.isCompleted, isTrue);
+    });
+
     test('replaces the previously saved list', () async {
       await repository.saveTasks([
         const TaskItem(id: 'old', title: 'Old task'),

@@ -59,6 +59,26 @@ class TaskRepository {
     );
   }
 
+  Future<List<TaskItem>> renameTask(String taskId, String title) {
+    final normalizedTitle = title.trim();
+    if (normalizedTitle.isEmpty) {
+      return Future.error(ArgumentError.value(title, 'title'));
+    }
+    return _mutateTasks(
+      (tasks) => [
+        for (final task in tasks)
+          if (task.id == taskId)
+            TaskItem(
+              id: task.id,
+              title: normalizedTitle,
+              isCompleted: task.isCompleted,
+            )
+          else
+            task,
+      ],
+    );
+  }
+
   Future<List<TaskItem>> deleteTask(String taskId) {
     return _mutateTasks(
       (tasks) => tasks.where((task) => task.id != taskId).toList(),
