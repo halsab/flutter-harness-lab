@@ -1,121 +1,327 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'data/task_repository.dart';
+import 'models/task_item.dart';
+
 void main() {
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.repository});
 
-  // This widget is the root of your application.
+  final TaskRepository? repository;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Мои задачи',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: .fromSeed(seedColor: Colors.teal),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: TaskListScreen(repository: repository),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class TaskListScreen extends StatefulWidget {
+  const TaskListScreen({super.key, this.repository});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  final TaskRepository? repository;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<TaskListScreen> createState() => _TaskListScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _TaskListScreenState extends State<TaskListScreen> {
+  late final TaskRepository _repository = widget.repository ?? TaskRepository();
+  final _inputController = TextEditingController();
+  var _tasks = <TaskItem>[];
+  var _isLoading = true;
+  var _loadFailed = false;
+  final _pendingAddTitles = <String>{};
+  Future<void> _pendingWrites = Future<void>.value();
 
-  void _incrementCounter() {
+  @override
+  void initState() {
+    super.initState();
+    _loadTasks();
+  }
+
+  @override
+  void dispose() {
+    _inputController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadTasks() async {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _isLoading = true;
+      _loadFailed = false;
     });
+    try {
+      final tasks = await _repository.loadTasks();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _tasks = tasks;
+        _isLoading = false;
+      });
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isLoading = false;
+        _loadFailed = true;
+      });
+    }
+  }
+
+  void _addTask() {
+    if (_isLoading || _loadFailed) {
+      return;
+    }
+    final title = _inputController.text.trim();
+    if (title.isEmpty || _pendingAddTitles.contains(title)) {
+      return;
+    }
+
+    var id = DateTime.now().microsecondsSinceEpoch.toString();
+    while (_tasks.any((task) => task.id == id)) {
+      id = '$id-';
+    }
+
+    final task = TaskItem(id: id, title: title);
+    _pendingAddTitles.add(title);
+    _persistMutation(
+      () => _repository.addTask(task),
+      onSaved: () {
+        _pendingAddTitles.remove(title);
+        if (_inputController.text.trim() == title) {
+          _inputController.clear();
+        }
+      },
+      onFailure: () => _pendingAddTitles.remove(title),
+    );
+  }
+
+  void _setTaskCompleted(TaskItem task, bool isCompleted) {
+    if (_isLoading || _loadFailed) {
+      return;
+    }
+    _persistMutation(() => _repository.setTaskCompleted(task.id, isCompleted));
+  }
+
+  void _deleteTask(TaskItem task) {
+    if (_isLoading || _loadFailed) {
+      return;
+    }
+    _persistMutation(() => _repository.deleteTask(task.id));
+  }
+
+  void _persistMutation(
+    Future<List<TaskItem>> Function() mutation, {
+    VoidCallback? onSaved,
+    VoidCallback? onFailure,
+  }) {
+    _pendingWrites = _pendingWrites
+        .then((_) async {
+          final savedTasks = await mutation();
+          if (mounted) {
+            setState(() {
+              _tasks = savedTasks;
+              onSaved?.call();
+            });
+          }
+        })
+        .catchError((Object _) {
+          onFailure?.call();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Не удалось сохранить задачи')),
+            );
+          }
+        });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+      appBar: AppBar(title: const Text('Мои задачи')),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Semantics(
+                      identifier: 'task-input',
+                      child: TextField(
+                        controller: _inputController,
+                        enabled: !_isLoading && !_loadFailed,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _addTask(),
+                        decoration: const InputDecoration(
+                          labelText: 'Новая задача',
+                          hintText: 'Например, купить продукты',
+                          prefixIcon: Icon(Icons.edit_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Semantics(
+                        identifier: 'add-task',
+                        child: FilledButton.icon(
+                          onPressed: _isLoading || _loadFailed
+                              ? null
+                              : _addTask,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Добавить задачу'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (_isLoading)
+                      const SizedBox(
+                        height: 200,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (_loadFailed)
+                      SizedBox(
+                        height: 200,
+                        child: _TaskLoadError(onRetry: _loadTasks),
+                      )
+                    else if (_tasks.isEmpty)
+                      const SizedBox(height: 240, child: _EmptyTasks())
+                    else
+                      for (final task in _tasks)
+                        _TaskRow(
+                          task: task,
+                          onToggle: (isCompleted) =>
+                              _setTaskCompleted(task, isCompleted),
+                          onDelete: () => _deleteTask(task),
+                        ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
+    );
+  }
+}
+
+class _TaskLoadError extends StatelessWidget {
+  const _TaskLoadError({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text('Не удалось загрузить задачи'),
+        const SizedBox(height: 8),
+        TextButton(onPressed: onRetry, child: const Text('Повторить')),
+      ],
+    );
+  }
+}
+
+class _EmptyTasks extends StatelessWidget {
+  const _EmptyTasks();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.task_alt,
+            size: 52,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(height: 12),
+          Text('Задач пока нет', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 4),
+          Text(
+            'Добавьте первую задачу',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TaskRow extends StatelessWidget {
+  const _TaskRow({
+    required this.task,
+    required this.onToggle,
+    required this.onDelete,
+  });
+
+  final TaskItem task;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = Theme.of(context).textTheme.bodyLarge;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
           children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            Semantics(
+              identifier: 'complete-${task.id}',
+              child: Checkbox(
+                value: task.isCompleted,
+                onChanged: (isCompleted) {
+                  if (isCompleted != null) {
+                    onToggle(isCompleted);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                task.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: task.isCompleted
+                    ? textStyle?.copyWith(
+                        decoration: TextDecoration.lineThrough,
+                        color: Theme.of(context).colorScheme.outline,
+                      )
+                    : textStyle,
+              ),
+            ),
+            Semantics(
+              identifier: 'delete-${task.id}',
+              child: IconButton(
+                tooltip: 'Удалить задачу',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline),
+              ),
             ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }

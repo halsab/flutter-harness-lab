@@ -1,0 +1,44 @@
+appId: dev.halsab.flutterHarnessLab
+name: My Tasks iOS mobile scenario
+---
+- stopApp
+- clearState
+- launchApp
+- extendedWaitUntil:
+    visible: "Задач пока нет"
+    timeout: 10000
+- assertVisible: "Мои задачи"
+- assertVisible: "Задач пока нет"
+- tapOn:
+    id: task-input
+- inputText: "Maestro iOS task"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "Maestro iOS task"
+    timeout: 10000
+- assertNotVisible:
+    id: task-input
+    text: "Maestro iOS task"
+- assertNotVisible: "Задач пока нет"
+- tapOn:
+    id: "complete-.*"
+- assertVisible:
+    id: "complete-.*"
+    checked: true
+- stopApp
+- launchApp
+- assertVisible: "Maestro iOS task"
+- assertVisible:
+    id: "complete-.*"
+    checked: true
+- tapOn:
+    id: "delete-.*"
+- extendedWaitUntil:
+    visible: "Задач пока нет"
+    timeout: 10000
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Задач пока нет"
+    timeout: 10000
+- assertNotVisible: "Maestro iOS task"
