@@ -20,6 +20,12 @@ When working as `build`, explicitly delegate substantive upfront design or compl
 
 Do not assume that switching between primary `plan` and `build` in an existing OpenCode session switches the selected model: session model selection is sticky. For reliable routing use named subagents, or start separate sessions with the intended model and reasoning variant. A configured model is not a verified model call; check actual tool outputs and session/model selection.
 
+## Git working-directory preference
+
+The project owner has already chosen **feature branches in the current checkout** as the default for sequential development. For normal tasks, do not ask whether to use a separate worktree. Before changing application code, inspect `git status` and the current branch; if already on the feature branch for this task, continue there. Otherwise create a new `feat/...`, `fix/...`, or `chore/...` branch from the project's integration branch (`app` in `flutter-harness-lab`; `main` in the harness repository). Never commit directly to the protected integration branch.
+
+Do not reset, stash, discard, or commit unrelated local changes (including local `opencode.jsonc` edits). Stage only task files. If changing branches or working in the current checkout would overwrite existing changes or interfere with concurrent work, stop and report the concrete conflict instead of guessing. Use a separate Git worktree only when the owner explicitly requests one; this standing branch preference is already the answer to routine Superpowers worktree/branch prompts.
+
 ## Safety and approval
 
 Follow the project's `permissions` in `opencode.jsonc`. External paths,
