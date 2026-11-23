@@ -21,11 +21,15 @@ Bootstrap has already been completed; **do not rerun it to reset `app`**.
 
 ## Local verification
 
-The owner has launched the default counter application on Android Emulator,
-iOS Simulator and Chrome and checked the local Flutter toolchain. Basic
-Dart, Maestro, Playwright, Chrome DevTools and Xcode MCP calls have been
-confirmed. Sol/Luna model availability was confirmed using explicit CLI
-model selections. Subagent routing was verified from a local OpenCode export. The first agent-authored task-list PR (#5) reached GitHub with passing CI and an iOS Maestro flow. The revised autonomous workflow is still unverified at runtime.
+The owner has launched Flutter on Android Emulator, iOS Simulator and Chrome
+and checked the local toolchain. Basic Dart, Maestro, Playwright, Chrome
+DevTools and Xcode MCP connectivity is confirmed. The task-list PR (#5)
+and autonomous title-edit PR (#6) reached GitHub; PR #6 had passing CI
+and actual Android Maestro / Web Playwright tool calls. An audit of that
+second run found no iOS Maestro invocation, three reviewer shell permission
+denials, and a main-agent session using Luna High despite the project
+default Medium. This project-sync PR applies the focused Harness fixes;
+the next fresh OpenCode run must validate them at runtime.
 
 GitHub Actions checks formatting, Flutter analysis and widget tests on PRs.
 Web compilation can be requested locally via the Harness full check; Android,
@@ -41,11 +45,17 @@ Hosted CI does not run device simulators or personal authentication.
 2. The agent chooses a feature branch in the current checkout from `app`,
    plans internally, and implements. No second plan approval, worktree choice
    or execution-mode question.
-3. Luna medium drives implementation. A fresh-context Luna medium reviewer
-   checks the final diff once (one targeted recheck for high-risk fixes);
-   consult Sol medium only for hard architecture or diagnosis.
-4. Run Flutter tests/analyze, Maestro on Android/iOS, and Playwright on Web;
-   report real per-platform PASS/FAIL/BLOCKED/SKIPPED evidence.
+3. Luna medium is the configured implementation default; confirm the active
+   variant in the new OpenCode session because a retained UI selection can
+   override it. A fresh-context Luna medium reviewer checks the complete
+   final task diff once using individual allowlisted read-only Git commands
+   and file reads (OPEN if any task diff is inaccessible); consult Sol medium
+   only for hard architecture or diagnosis.
+4. Run Flutter tests/analyze, discover Android/iOS targets, and run Maestro
+   on both when available, including a booted iOS Simulator. Compile-only iOS
+   checks do not count as iOS UI tests. Use Playwright on Web and assert the
+   exact intended result after actions and persistence. Report independent
+   Android/iOS/Web PASS/FAIL/BLOCKED/SKIPPED results with evidence.
 5. Automatically attempt push and a PR targeting `app`, honoring the
    separate tool permission prompt. **The owner reviews and merges**.
    No automatic PR merge or golden baseline acceptance.
@@ -60,6 +70,15 @@ For an optional interactive design process, upstream Superpowers may still
 be enabled separately.
 See [model routing and safety](https://github.com/halsab/flutter-harness/blob/main/docs/model-routing.md).
 
-The lab's existing Harness files are synchronized explicitly in this PR;
-the normal installer remains non-overwriting. Installing into unrelated
-existing or legacy Flutter projects remains out of scope for v0.
+The lab's existing Harness files are synchronized explicitly via small
+integration PRs; the normal installer remains non-overwriting. To run the
+next trial after merging the updated Harness and Lab configuration PRs:
+update local `app`, select Luna **Medium** in a **new OpenCode session**
+(not just `opencode debug config`), ensure `flutter devices` lists both
+the Android emulator and an iOS Simulator, and give the agent only a short
+feature request. Keep CI lightweight; Android/iOS Maestro and Web Playwright
+remain local agent responsibilities. Do not merge a feature PR until its
+verification evidence has been reviewed.
+
+Installing into unrelated existing or legacy Flutter projects remains out
+of scope for v0.

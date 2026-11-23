@@ -52,7 +52,16 @@ jobs:
               a = c['agents'][agent]
               rules = {(r['action'],r['resource'],r['effect']) for r in a['permissions']}
               assert a['mode'] == 'subagent'
-              assert {('edit','*','deny'), ('shell','*','deny')} <= rules
+              assert {('edit','*','deny'), ('shell','*','deny'), ('shell','git merge-base *','allow')} <= rules
+              allowed_shell = {rule for rule in rules if rule[0] == 'shell' and rule[2] == 'allow'}
+              assert allowed_shell <= {
+                  ('shell','git status *','allow'),
+                  ('shell','git diff *','allow'),
+                  ('shell','git merge-base *','allow'),
+                  ('shell','git show *','allow'),
+                  ('shell','git log *','allow'),
+              }
+          assert 'OPEN' in c['agents']['reviewer']['description']
           assert set(c['mcp']['servers']) == {'dart','maestro','playwright','chrome-devtools'}
           assert c['plugins'] == [
               '-superpowers', '-superpowers.*',
