@@ -132,6 +132,38 @@ void main() {
     expect(retryingRepository.loadAttempts, 2);
   });
 
+  testWidgets('keeps a rejected add retryable and hides the unsaved task', (
+    tester,
+  ) async {
+    final flakyRepository = _FlakyTaskRepository();
+    await tester.pumpWidget(MyApp(repository: flakyRepository));
+    await tester.pumpAndSettle();
+
+    final input = find.bySemanticsIdentifier('task-input');
+    final addButton = find.bySemanticsIdentifier('add-task');
+    await tester.enterText(input, 'Retry this task');
+    await tester.tap(addButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Не удалось сохранить задачи'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'Retry this task',
+    );
+    expect(find.byType(Checkbox), findsNothing);
+    expect(flakyRepository.tasks, isEmpty);
+
+    await tester.tap(addButton);
+    await tester.pumpAndSettle();
+
+    expect(flakyRepository.tasks.single.title, 'Retry this task');
+    expect(find.byType(Checkbox), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+  });
+
   testWidgets('serializes writes when rapid actions overlap', (tester) async {
     final semantics = tester.ensureSemantics();
     final delayedRepository = _SerializedTaskRepository();
@@ -171,6 +203,7 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
+    final layoutRepository = _RecordingTaskRepository();
     tester.view.physicalSize = const Size(320, 420);
     tester.view.devicePixelRatio = 1;
     tester.view.viewInsets = const FakeViewPadding(bottom: 150);
@@ -178,7 +211,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetViewInsets);
 
-    await tester.pumpWidget(MyApp(repository: repository));
+    await tester.pumpWidget(MyApp(repository: layoutRepository));
     await tester.pumpAndSettle();
 
     final input = find.bySemanticsIdentifier('task-input');
@@ -189,11 +222,7 @@ void main() {
     await tester.tap(addButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('Short screen task'), findsOneWidget);
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
-      isEmpty,
-    );
+    expect(layoutRepository.addAttempts, 1);
     expect(tester.takeException(), isNull);
     semantics.dispose();
   });
@@ -218,6 +247,39 @@ class _RetryingTaskRepository extends TaskRepository {
       throw StateError('Storage is temporarily unavailable');
     }
     return [];
+  }
+}
+
+class _FlakyTaskRepository extends TaskRepository {
+  final tasks = <TaskItem>[];
+  var _shouldRejectNextAdd = true;
+
+  @override
+  Future<List<TaskItem>> loadTasks() async => List.of(tasks);
+
+  @override
+  Future<List<TaskItem>> addTask(TaskItem task) async {
+    if (_shouldRejectNextAdd) {
+      _shouldRejectNextAdd = false;
+      throw StateError('Storage is temporarily unavailable');
+    }
+    tasks.add(task);
+    return List.of(tasks);
+  }
+}
+
+class _RecordingTaskRepository extends TaskRepository {
+  var addAttempts = 0;
+  final tasks = <TaskItem>[];
+
+  @override
+  Future<List<TaskItem>> loadTasks() async => List.of(tasks);
+
+  @override
+  Future<List<TaskItem>> addTask(TaskItem task) async {
+    addAttempts++;
+    tasks.add(task);
+    return List.of(tasks);
   }
 }
 

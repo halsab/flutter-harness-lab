@@ -47,16 +47,12 @@ class TaskRepository {
     return _mutateTasks((tasks) => [...tasks, task]);
   }
 
-  Future<List<TaskItem>> toggleTask(String taskId) {
+  Future<List<TaskItem>> setTaskCompleted(String taskId, bool isCompleted) {
     return _mutateTasks(
       (tasks) => [
         for (final task in tasks)
           if (task.id == taskId)
-            TaskItem(
-              id: task.id,
-              title: task.title,
-              isCompleted: !task.isCompleted,
-            )
+            TaskItem(id: task.id, title: task.title, isCompleted: isCompleted)
           else
             task,
       ],

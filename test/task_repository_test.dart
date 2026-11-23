@@ -87,6 +87,21 @@ void main() {
       },
     );
 
+    test('a stale tab cannot undo a completed task', () async {
+      await repository.saveTasks([
+        const TaskItem(id: 'shared-task', title: 'Shared task'),
+      ]);
+      final otherTabRepository = TaskRepository(preferences: preferences);
+      await repository.loadTasks();
+      await otherTabRepository.loadTasks();
+
+      await repository.setTaskCompleted('shared-task', true);
+      await otherTabRepository.setTaskCompleted('shared-task', true);
+
+      final restored = await repository.loadTasks();
+      expect(restored.single.isCompleted, isTrue);
+    });
+
     test('replaces the previously saved list', () async {
       await repository.saveTasks([
         const TaskItem(id: 'old', title: 'Old task'),

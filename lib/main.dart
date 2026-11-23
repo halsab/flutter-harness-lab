@@ -94,49 +94,42 @@ class _TaskListScreenState extends State<TaskListScreen> {
     }
 
     final task = TaskItem(id: id, title: title);
-    setState(() => _tasks = [..._tasks, task]);
-    _inputController.clear();
-    _persistMutation(() => _repository.addTask(task));
+    _persistMutation(
+      () => _repository.addTask(task),
+      onSaved: () {
+        if (_inputController.text.trim() == title) {
+          _inputController.clear();
+        }
+      },
+    );
   }
 
-  void _toggleTask(TaskItem task) {
+  void _setTaskCompleted(TaskItem task, bool isCompleted) {
     if (_isLoading || _loadFailed) {
       return;
     }
-    setState(() {
-      _tasks = [
-        for (final currentTask in _tasks)
-          if (currentTask.id == task.id)
-            TaskItem(
-              id: currentTask.id,
-              title: currentTask.title,
-              isCompleted: !currentTask.isCompleted,
-            )
-          else
-            currentTask,
-      ];
-    });
-    _persistMutation(() => _repository.toggleTask(task.id));
+    _persistMutation(() => _repository.setTaskCompleted(task.id, isCompleted));
   }
 
   void _deleteTask(TaskItem task) {
     if (_isLoading || _loadFailed) {
       return;
     }
-    setState(() {
-      _tasks = _tasks
-          .where((currentTask) => currentTask.id != task.id)
-          .toList();
-    });
     _persistMutation(() => _repository.deleteTask(task.id));
   }
 
-  void _persistMutation(Future<List<TaskItem>> Function() mutation) {
+  void _persistMutation(
+    Future<List<TaskItem>> Function() mutation, {
+    VoidCallback? onSaved,
+  }) {
     _pendingWrites = _pendingWrites
         .then((_) async {
           final savedTasks = await mutation();
           if (mounted) {
-            setState(() => _tasks = savedTasks);
+            setState(() {
+              _tasks = savedTasks;
+              onSaved?.call();
+            });
           }
         })
         .catchError((Object _) {
@@ -208,7 +201,8 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       for (final task in _tasks)
                         _TaskRow(
                           task: task,
-                          onToggle: () => _toggleTask(task),
+                          onToggle: (isCompleted) =>
+                              _setTaskCompleted(task, isCompleted),
                           onDelete: () => _deleteTask(task),
                         ),
                   ],
@@ -275,7 +269,7 @@ class _TaskRow extends StatelessWidget {
   });
 
   final TaskItem task;
-  final VoidCallback onToggle;
+  final ValueChanged<bool> onToggle;
   final VoidCallback onDelete;
 
   @override
@@ -291,7 +285,11 @@ class _TaskRow extends StatelessWidget {
               identifier: 'complete-${task.id}',
               child: Checkbox(
                 value: task.isCompleted,
-                onChanged: (_) => onToggle(),
+                onChanged: (isCompleted) {
+                  if (isCompleted != null) {
+                    onToggle(isCompleted);
+                  }
+                },
               ),
             ),
             const SizedBox(width: 8),

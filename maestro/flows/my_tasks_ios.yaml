@@ -33,7 +33,9 @@ name: My Tasks iOS mobile scenario
     checked: true
 - tapOn:
     id: "delete-.*"
-- assertNotVisible: "Maestro iOS task"
+- stopApp
+- launchApp
 - extendedWaitUntil:
     visible: "Задач пока нет"
     timeout: 10000
+- assertNotVisible: "Maestro iOS task"
