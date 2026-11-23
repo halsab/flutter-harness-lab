@@ -3,13 +3,19 @@
 ## Flutter Harness
 Project tooling: https://github.com/halsab/flutter-harness
 Read .flutter-harness/config.json and load the flutter-harness skill.
-Use Superpowers for planning, execution and review. For sequential tasks,
-create a feature branch in this checkout from app; do not ask branch vs worktree.
-The owner has already chosen branches, not separate worktrees. Preserve unrelated
-local changes, including opencode.jsonc, and stage only task files. If changing
-branches would overwrite changes or disrupt concurrent work, stop safely.
-Commit verified milestones, open pull requests; never merge automatically.
-Respect OpenCode model routing and permission prompts; do not bypass denied actions.
-Only the human can approve updates to golden image baselines.
-Report PASS / FAIL / BLOCKED / SKIPPED accurately.
+
+A feature request authorizes routine implementation and PR preparation.
+Only ask when a material product/security/architecture decision is unresolved.
+When needed, ONE concise design approval suffices; do not ask again to approve
+a technical plan, branch/worktree choice, execution style or routine library.
+Choose a feature branch in this checkout from app by default. Preserve and
+do not stage unrelated local changes (including opencode.jsonc).
+Use Luna medium for implementation and ordinary independent review; reserve
+Sol medium for difficult architecture/diagnosis. One fresh-context review of
+the changed diff; allow one targeted recheck only for a high-risk fix.
+Use Flutter tests/analyze, Maestro on mobile, Playwright on Web, and honest
+per-platform PASS/FAIL/BLOCKED/SKIPPED outcomes. Avoid repeated failing tool
+loops. Always attempt push and PR into app after implementation; request push
+approval, never bypass denials, and never merge a PR automatically.
+Do not update golden baselines without owner approval.
 <!-- flutter-harness:end -->
