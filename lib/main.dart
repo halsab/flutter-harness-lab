@@ -122,6 +122,20 @@ class _TaskListScreenState extends State<TaskListScreen> {
     _persistMutation(() => _repository.deleteTask(task.id));
   }
 
+  Future<void> _editTask(TaskItem task) async {
+    if (_isLoading || _loadFailed) {
+      return;
+    }
+    final title = await showDialog<String>(
+      context: context,
+      builder: (context) => _EditTaskDialog(initialTitle: task.title),
+    );
+    if (title == null || !mounted) {
+      return;
+    }
+    _persistMutation(() => _repository.renameTask(task.id, title));
+  }
+
   void _persistMutation(
     Future<List<TaskItem>> Function() mutation, {
     VoidCallback? onSaved,
@@ -209,6 +223,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                           task: task,
                           onToggle: (isCompleted) =>
                               _setTaskCompleted(task, isCompleted),
+                          onEdit: () => _editTask(task),
                           onDelete: () => _deleteTask(task),
                         ),
                   ],
@@ -271,11 +286,13 @@ class _TaskRow extends StatelessWidget {
   const _TaskRow({
     required this.task,
     required this.onToggle,
+    required this.onEdit,
     required this.onDelete,
   });
 
   final TaskItem task;
   final ValueChanged<bool> onToggle;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   @override
@@ -313,6 +330,14 @@ class _TaskRow extends StatelessWidget {
               ),
             ),
             Semantics(
+              identifier: 'edit-${task.id}',
+              child: IconButton(
+                tooltip: 'Изменить название',
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined),
+              ),
+            ),
+            Semantics(
               identifier: 'delete-${task.id}',
               child: IconButton(
                 tooltip: 'Удалить задачу',
@@ -324,5 +349,58 @@ class _TaskRow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _EditTaskDialog extends StatefulWidget {
+  const _EditTaskDialog({required this.initialTitle});
+
+  final String initialTitle;
+
+  @override
+  State<_EditTaskDialog> createState() => _EditTaskDialogState();
+}
+
+class _EditTaskDialogState extends State<_EditTaskDialog> {
+  late final _controller = TextEditingController(text: widget.initialTitle);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Изменить название задачи'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textInputAction: TextInputAction.done,
+        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => _save(context),
+        decoration: const InputDecoration(labelText: 'Название задачи'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _controller.text.trim().isEmpty
+              ? null
+              : () => _save(context),
+          child: const Text('Сохранить'),
+        ),
+      ],
+    );
+  }
+
+  void _save(BuildContext context) {
+    final title = _controller.text.trim();
+    if (title.isNotEmpty) {
+      Navigator.of(context).pop(title);
+    }
   }
 }

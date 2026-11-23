@@ -96,6 +96,53 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('edits a title, rejects blanks, cancels, and persists status', (
+    tester,
+  ) async {
+    final editRepository = _EditableTaskRepository([
+      const TaskItem(id: 'edit-me', title: 'Current title', isCompleted: true),
+    ]);
+    await tester.pumpWidget(MyApp(repository: editRepository));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
+    await tester.pumpAndSettle();
+
+    final editField = find.byType(TextField).last;
+    expect(
+      tester.widget<TextField>(editField).controller!.text,
+      'Current title',
+    );
+    await tester.enterText(editField, '   ');
+    await tester.pump();
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Сохранить'))
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    expect(find.text('Current title'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Renamed task');
+    await tester.tap(find.text('Сохранить'));
+    await tester.pumpAndSettle();
+
+    expect((await editRepository.loadTasks()).single.title, 'Renamed task');
+    expect(find.text('Renamed task'), findsOneWidget);
+    expect(find.text('Current title'), findsNothing);
+    expect((await editRepository.loadTasks()).single.isCompleted, isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(MyApp(repository: editRepository));
+    await tester.pumpAndSettle();
+    expect(find.text('Renamed task'), findsOneWidget);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+  });
+
   testWidgets('does not accept tasks until the saved list has loaded', (
     tester,
   ) async {
@@ -253,6 +300,26 @@ void main() {
     expect(tester.takeException(), isNull);
     semantics.dispose();
   });
+}
+
+class _EditableTaskRepository extends TaskRepository {
+  _EditableTaskRepository(this.tasks);
+
+  final List<TaskItem> tasks;
+
+  @override
+  Future<List<TaskItem>> loadTasks() async => List.of(tasks);
+
+  @override
+  Future<List<TaskItem>> renameTask(String taskId, String title) async {
+    final index = tasks.indexWhere((task) => task.id == taskId);
+    tasks[index] = TaskItem(
+      id: taskId,
+      title: title,
+      isCompleted: tasks[index].isCompleted,
+    );
+    return List.of(tasks);
+  }
 }
 
 class _DelayedTaskRepository extends TaskRepository {
