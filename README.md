@@ -28,7 +28,7 @@ confirmed. Sol/Luna model availability was confirmed using explicit CLI
 model selections. Subagent routing was verified from a local OpenCode export. The first agent-authored task-list PR (#5) reached GitHub with passing CI and an iOS Maestro flow. The revised autonomous workflow is still unverified at runtime.
 
 GitHub Actions checks formatting, Flutter analysis and widget tests on PRs.
-Web compilation is available by manually dispatching the workflow; Android,
+Web compilation can be requested locally via the Harness full check; Android,
 iOS and Web UI tests remain the local agent's responsibility. CI also validates
 OpenCode routing, installed Harness scripts and permission guardrails.
 Hosted CI does not run device simulators or personal authentication.
