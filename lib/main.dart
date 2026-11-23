@@ -40,6 +40,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   var _tasks = <TaskItem>[];
   var _isLoading = true;
   var _loadFailed = false;
+  final _pendingAddTitles = <String>{};
   Future<void> _pendingWrites = Future<void>.value();
 
   @override
@@ -84,7 +85,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
       return;
     }
     final title = _inputController.text.trim();
-    if (title.isEmpty) {
+    if (title.isEmpty || _pendingAddTitles.contains(title)) {
       return;
     }
 
@@ -94,13 +95,16 @@ class _TaskListScreenState extends State<TaskListScreen> {
     }
 
     final task = TaskItem(id: id, title: title);
+    _pendingAddTitles.add(title);
     _persistMutation(
       () => _repository.addTask(task),
       onSaved: () {
+        _pendingAddTitles.remove(title);
         if (_inputController.text.trim() == title) {
           _inputController.clear();
         }
       },
+      onFailure: () => _pendingAddTitles.remove(title),
     );
   }
 
@@ -121,6 +125,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   void _persistMutation(
     Future<List<TaskItem>> Function() mutation, {
     VoidCallback? onSaved,
+    VoidCallback? onFailure,
   }) {
     _pendingWrites = _pendingWrites
         .then((_) async {
@@ -133,6 +138,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
           }
         })
         .catchError((Object _) {
+          onFailure?.call();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Не удалось сохранить задачи')),

@@ -33,6 +33,9 @@ name: My Tasks iOS mobile scenario
     checked: true
 - tapOn:
     id: "delete-.*"
+- extendedWaitUntil:
+    visible: "Задач пока нет"
+    timeout: 10000
 - stopApp
 - launchApp
 - extendedWaitUntil:

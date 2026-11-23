@@ -199,6 +199,33 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('does not enqueue a draft twice while its save is pending', (
+    tester,
+  ) async {
+    final delayedRepository = _SerializedTaskRepository();
+    await tester.pumpWidget(MyApp(repository: delayedRepository));
+    await tester.pumpAndSettle();
+
+    final input = find.bySemanticsIdentifier('task-input');
+    final addButton = find.bySemanticsIdentifier('add-task');
+    await tester.enterText(input, 'First write');
+    await tester.tap(addButton);
+    await tester.pump();
+    await delayedRepository.firstWriteStarted.future;
+
+    await tester.tap(addButton);
+    await tester.pump();
+    delayedRepository.releaseFirstWrite.complete();
+    await tester.pumpAndSettle();
+
+    expect(delayedRepository.startedTitles, ['First write']);
+    expect(delayedRepository.tasks, hasLength(1));
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+  });
+
   testWidgets('keeps the form usable with a keyboard inset and short height', (
     tester,
   ) async {
@@ -295,7 +322,7 @@ class _SerializedTaskRepository extends TaskRepository {
   @override
   Future<List<TaskItem>> addTask(TaskItem task) async {
     startedTitles.add(task.title);
-    if (task.title == 'First write') {
+    if (startedTitles.length == 1) {
       firstWriteStarted.complete();
       await releaseFirstWrite.future;
     }
