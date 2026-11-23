@@ -161,10 +161,7 @@ void main() {
     await tester.enterText(input, 'Second task');
     await tester.tap(find.bySemanticsIdentifier('add-task'));
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<TextField>(_taskInputField).controller!.text,
-      isEmpty,
-    );
+    expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
 
     final tasks = await repository.loadTasks();
     expect(tasks, hasLength(2));
@@ -249,10 +246,7 @@ void main() {
     final delayedRepository = _DelayedTaskRepository();
     await tester.pumpWidget(MyApp(repository: delayedRepository));
 
-    expect(
-      tester.widget<TextField>(_taskInputField).enabled,
-      isFalse,
-    );
+    expect(tester.widget<TextField>(_taskInputField).enabled, isFalse);
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNull,
@@ -264,10 +258,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Saved before startup'), findsOneWidget);
-    expect(
-      tester.widget<TextField>(_taskInputField).enabled,
-      isTrue,
-    );
+    expect(tester.widget<TextField>(_taskInputField).enabled, isTrue);
   });
 
   testWidgets('shows retry after storage initialization fails', (tester) async {
@@ -311,10 +302,7 @@ void main() {
 
     expect(flakyRepository.tasks.single.title, 'Retry this task');
     expect(find.byType(Checkbox), findsOneWidget);
-    expect(
-      tester.widget<TextField>(_taskInputField).controller!.text,
-      isEmpty,
-    );
+    expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
   });
 
   testWidgets('serializes writes when rapid actions overlap', (tester) async {
@@ -373,10 +361,7 @@ void main() {
 
     expect(delayedRepository.startedTitles, ['First write']);
     expect(delayedRepository.tasks, hasLength(1));
-    expect(
-      tester.widget<TextField>(_taskInputField).controller!.text,
-      isEmpty,
-    );
+    expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
   });
 
   testWidgets('keeps the form usable with a keyboard inset and short height', (
