@@ -1,0 +1,6 @@
+url: http://127.0.0.1:8080
+name: My Tasks Web smoke
+---
+- clearState
+- openLink: http://127.0.0.1:8080
+- assertTrue: "document.title === 'Мои задачи'"

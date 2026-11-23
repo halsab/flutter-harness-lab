@@ -5,15 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task_item.dart';
 
 class TaskRepository {
-  TaskRepository({SharedPreferences? preferences}) : _preferences = preferences;
+  TaskRepository({this.preferences});
 
   static const _storageKey = 'my_tasks';
 
-  final SharedPreferences? _preferences;
+  final SharedPreferences? preferences;
 
   Future<List<TaskItem>> loadTasks() async {
-    final preferences = _preferences ?? await SharedPreferences.getInstance();
-    final json = preferences.getString(_storageKey);
+    final storage = preferences ?? await SharedPreferences.getInstance();
+    final json = storage.getString(_storageKey);
     if (json == null) {
       return [];
     }
@@ -31,8 +31,8 @@ class TaskRepository {
   }
 
   Future<void> saveTasks(List<TaskItem> tasks) async {
-    final preferences = _preferences ?? await SharedPreferences.getInstance();
-    await preferences.setString(
+    final storage = preferences ?? await SharedPreferences.getInstance();
+    await storage.setString(
       _storageKey,
       jsonEncode(tasks.map((task) => task.toJson()).toList()),
     );
