@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 import 'package:flutter_harness_lab/data/task_repository.dart';
 import 'package:flutter_harness_lab/models/task_item.dart';
@@ -47,6 +48,45 @@ void main() {
       expect(await repository.loadTasks(), isEmpty);
     });
 
+    test('recovers from a stored value with the wrong type', () async {
+      SharedPreferences.setMockInitialValues({'my_tasks': 42});
+      final invalidPreferences = await SharedPreferences.getInstance();
+      final invalidRepository = TaskRepository(preferences: invalidPreferences);
+
+      expect(await invalidRepository.loadTasks(), isEmpty);
+    });
+
+    test('throws when the platform rejects a write', () async {
+      SharedPreferencesStorePlatform.instance =
+          _RejectingSharedPreferencesStore();
+
+      expect(
+        repository.saveTasks([
+          const TaskItem(id: 'task-1', title: 'Keep this task'),
+        ]),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test(
+      'mutates fresh storage instead of replacing another tab list',
+      () async {
+        final otherTabRepository = TaskRepository(preferences: preferences);
+        await repository.loadTasks();
+        await otherTabRepository.loadTasks();
+
+        await repository.addTask(
+          const TaskItem(id: 'first', title: 'First tab task'),
+        );
+        await otherTabRepository.addTask(
+          const TaskItem(id: 'second', title: 'Second tab task'),
+        );
+
+        final restored = await repository.loadTasks();
+        expect(restored.map((task) => task.id), ['first', 'second']);
+      },
+    );
+
     test('replaces the previously saved list', () async {
       await repository.saveTasks([
         const TaskItem(id: 'old', title: 'Old task'),
@@ -60,4 +100,13 @@ void main() {
       expect(restored.single.id, 'new');
     });
   });
+}
+
+class _RejectingSharedPreferencesStore extends InMemorySharedPreferencesStore {
+  _RejectingSharedPreferencesStore() : super.empty();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    return false;
+  }
 }

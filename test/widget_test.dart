@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_harness_lab/data/task_repository.dart';
 import 'package:flutter_harness_lab/main.dart';
+import 'package:flutter_harness_lab/models/task_item.dart';
 
 void main() {
   late TaskRepository repository;
@@ -49,6 +52,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(MyApp(repository: repository));
+    await tester.pumpAndSettle();
 
     final input = find.bySemanticsIdentifier('task-input');
     await tester.enterText(input, 'First task');
@@ -91,4 +95,149 @@ void main() {
     expect(tester.takeException(), isNull);
     semantics.dispose();
   });
+
+  testWidgets('does not accept tasks until the saved list has loaded', (
+    tester,
+  ) async {
+    final delayedRepository = _DelayedTaskRepository();
+    await tester.pumpWidget(MyApp(repository: delayedRepository));
+
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull,
+    );
+
+    delayedRepository.completeLoad([
+      const TaskItem(id: 'saved', title: 'Saved before startup'),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved before startup'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
+  });
+
+  testWidgets('shows retry after storage initialization fails', (tester) async {
+    final retryingRepository = _RetryingTaskRepository();
+    await tester.pumpWidget(MyApp(repository: retryingRepository));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Не удалось загрузить задачи'), findsOneWidget);
+    expect(find.text('Повторить'), findsOneWidget);
+
+    await tester.tap(find.text('Повторить'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Задач пока нет'), findsOneWidget);
+    expect(retryingRepository.loadAttempts, 2);
+  });
+
+  testWidgets('serializes writes when rapid actions overlap', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final delayedRepository = _SerializedTaskRepository();
+    await tester.pumpWidget(MyApp(repository: delayedRepository));
+    await tester.pumpAndSettle();
+
+    final input = find.bySemanticsIdentifier('task-input');
+    await tester.enterText(input, 'First write');
+    await tester.tap(find.bySemanticsIdentifier('add-task'));
+    await tester.pump();
+    await delayedRepository.firstWriteStarted.future;
+
+    await tester.enterText(input, 'Second write');
+    await tester.tap(find.bySemanticsIdentifier('add-task'));
+    await tester.pump();
+    expect(delayedRepository.startedTitles, ['First write']);
+
+    delayedRepository.releaseFirstWrite.complete();
+    await tester.pumpAndSettle();
+
+    expect(delayedRepository.startedTitles, ['First write', 'Second write']);
+    expect(delayedRepository.tasks.map((task) => task.title), [
+      'First write',
+      'Second write',
+    ]);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(MyApp(repository: delayedRepository));
+    await tester.pumpAndSettle();
+
+    expect(find.text('First write'), findsOneWidget);
+    expect(find.text('Second write'), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('keeps the form usable with a keyboard inset and short height', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    tester.view.physicalSize = const Size(320, 420);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 150);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+
+    await tester.pumpWidget(MyApp(repository: repository));
+    await tester.pumpAndSettle();
+
+    final input = find.bySemanticsIdentifier('task-input');
+    final addButton = find.bySemanticsIdentifier('add-task');
+    await tester.ensureVisible(input);
+    await tester.enterText(input, 'Short screen task');
+    await tester.ensureVisible(addButton);
+    await tester.tap(addButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Short screen task'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
+}
+
+class _DelayedTaskRepository extends TaskRepository {
+  final _loadCompleter = Completer<List<TaskItem>>();
+
+  void completeLoad(List<TaskItem> tasks) => _loadCompleter.complete(tasks);
+
+  @override
+  Future<List<TaskItem>> loadTasks() => _loadCompleter.future;
+}
+
+class _RetryingTaskRepository extends TaskRepository {
+  var loadAttempts = 0;
+
+  @override
+  Future<List<TaskItem>> loadTasks() async {
+    loadAttempts++;
+    if (loadAttempts == 1) {
+      throw StateError('Storage is temporarily unavailable');
+    }
+    return [];
+  }
+}
+
+class _SerializedTaskRepository extends TaskRepository {
+  final firstWriteStarted = Completer<void>();
+  final releaseFirstWrite = Completer<void>();
+  final startedTitles = <String>[];
+  final tasks = <TaskItem>[];
+
+  @override
+  Future<List<TaskItem>> loadTasks() async => List.of(tasks);
+
+  @override
+  Future<List<TaskItem>> addTask(TaskItem task) async {
+    startedTitles.add(task.title);
+    if (task.title == 'First write') {
+      firstWriteStarted.complete();
+      await releaseFirstWrite.future;
+    }
+    tasks.add(task);
+    return List.of(tasks);
+  }
 }

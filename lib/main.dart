@@ -39,6 +39,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   final _inputController = TextEditingController();
   var _tasks = <TaskItem>[];
   var _isLoading = true;
+  var _loadFailed = false;
   Future<void> _pendingWrites = Future<void>.value();
 
   @override
@@ -54,17 +55,34 @@ class _TaskListScreenState extends State<TaskListScreen> {
   }
 
   Future<void> _loadTasks() async {
-    final tasks = await _repository.loadTasks();
-    if (!mounted) {
-      return;
-    }
     setState(() {
-      _tasks = tasks;
-      _isLoading = false;
+      _isLoading = true;
+      _loadFailed = false;
     });
+    try {
+      final tasks = await _repository.loadTasks();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _tasks = tasks;
+        _isLoading = false;
+      });
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isLoading = false;
+        _loadFailed = true;
+      });
+    }
   }
 
   void _addTask() {
+    if (_isLoading || _loadFailed) {
+      return;
+    }
     final title = _inputController.text.trim();
     if (title.isEmpty) {
       return;
@@ -75,14 +93,16 @@ class _TaskListScreenState extends State<TaskListScreen> {
       id = '$id-';
     }
 
-    setState(() {
-      _tasks = [..._tasks, TaskItem(id: id, title: title)];
-    });
+    final task = TaskItem(id: id, title: title);
+    setState(() => _tasks = [..._tasks, task]);
     _inputController.clear();
-    _persistTasks();
+    _persistMutation(() => _repository.addTask(task));
   }
 
   void _toggleTask(TaskItem task) {
+    if (_isLoading || _loadFailed) {
+      return;
+    }
     setState(() {
       _tasks = [
         for (final currentTask in _tasks)
@@ -96,22 +116,29 @@ class _TaskListScreenState extends State<TaskListScreen> {
             currentTask,
       ];
     });
-    _persistTasks();
+    _persistMutation(() => _repository.toggleTask(task.id));
   }
 
   void _deleteTask(TaskItem task) {
+    if (_isLoading || _loadFailed) {
+      return;
+    }
     setState(() {
       _tasks = _tasks
           .where((currentTask) => currentTask.id != task.id)
           .toList();
     });
-    _persistTasks();
+    _persistMutation(() => _repository.deleteTask(task.id));
   }
 
-  void _persistTasks() {
-    final snapshot = List<TaskItem>.unmodifiable(_tasks);
+  void _persistMutation(Future<List<TaskItem>> Function() mutation) {
     _pendingWrites = _pendingWrites
-        .then((_) => _repository.saveTasks(snapshot))
+        .then((_) async {
+          final savedTasks = await mutation();
+          if (mounted) {
+            setState(() => _tasks = savedTasks);
+          }
+        })
         .catchError((Object _) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -131,58 +158,84 @@ class _TaskListScreenState extends State<TaskListScreen> {
             constraints: const BoxConstraints(maxWidth: 640),
             child: Padding(
               padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Semantics(
-                    identifier: 'task-input',
-                    child: TextField(
-                      controller: _inputController,
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _addTask(),
-                      decoration: const InputDecoration(
-                        labelText: 'Новая задача',
-                        hintText: 'Например, купить продукты',
-                        prefixIcon: Icon(Icons.edit_outlined),
-                        border: OutlineInputBorder(),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Semantics(
+                      identifier: 'task-input',
+                      child: TextField(
+                        controller: _inputController,
+                        enabled: !_isLoading && !_loadFailed,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _addTask(),
+                        decoration: const InputDecoration(
+                          labelText: 'Новая задача',
+                          hintText: 'Например, купить продукты',
+                          prefixIcon: Icon(Icons.edit_outlined),
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: Semantics(
-                      identifier: 'add-task',
-                      child: FilledButton.icon(
-                        onPressed: _addTask,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Добавить задачу'),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Semantics(
+                        identifier: 'add-task',
+                        child: FilledButton.icon(
+                          onPressed: _isLoading || _loadFailed
+                              ? null
+                              : _addTask,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Добавить задачу'),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  Expanded(
-                    child: _isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _tasks.isEmpty
-                        ? const _EmptyTasks()
-                        : ListView.builder(
-                            itemCount: _tasks.length,
-                            itemBuilder: (context, index) {
-                              final task = _tasks[index];
-                              return _TaskRow(
-                                task: task,
-                                onToggle: () => _toggleTask(task),
-                                onDelete: () => _deleteTask(task),
-                              );
-                            },
-                          ),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    if (_isLoading)
+                      const SizedBox(
+                        height: 200,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (_loadFailed)
+                      SizedBox(
+                        height: 200,
+                        child: _TaskLoadError(onRetry: _loadTasks),
+                      )
+                    else if (_tasks.isEmpty)
+                      const SizedBox(height: 240, child: _EmptyTasks())
+                    else
+                      for (final task in _tasks)
+                        _TaskRow(
+                          task: task,
+                          onToggle: () => _toggleTask(task),
+                          onDelete: () => _deleteTask(task),
+                        ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _TaskLoadError extends StatelessWidget {
+  const _TaskLoadError({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text('Не удалось загрузить задачи'),
+        const SizedBox(height: 8),
+        TextButton(onPressed: onRetry, child: const Text('Повторить')),
+      ],
     );
   }
 }
