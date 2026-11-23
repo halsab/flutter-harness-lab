@@ -40,6 +40,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   var _tasks = <TaskItem>[];
   var _isLoading = true;
   var _loadFailed = false;
+  var _taskFilter = _TaskFilter.all;
   final _pendingAddTitles = <String>{};
   Future<void> _pendingWrites = Future<void>.value();
 
@@ -163,6 +164,13 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleTasks = _tasks.where((task) {
+      return switch (_taskFilter) {
+        _TaskFilter.all => true,
+        _TaskFilter.active => !task.isCompleted,
+        _TaskFilter.completed => task.isCompleted,
+      };
+    }).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Мои задачи')),
       body: SafeArea(
@@ -205,6 +213,21 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
+                    if (!_isLoading && !_loadFailed) ...[
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final filter in _TaskFilter.values)
+                            ChoiceChip(
+                              label: Text(filter.label),
+                              selected: _taskFilter == filter,
+                              onSelected: (_) =>
+                                  setState(() => _taskFilter = filter),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     if (_isLoading)
                       const SizedBox(
                         height: 200,
@@ -217,8 +240,13 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       )
                     else if (_tasks.isEmpty)
                       const SizedBox(height: 240, child: _EmptyTasks())
+                    else if (visibleTasks.isEmpty)
+                      SizedBox(
+                        height: 200,
+                        child: _EmptyFilteredTasks(filter: _taskFilter),
+                      )
                     else
-                      for (final task in _tasks)
+                      for (final task in visibleTasks)
                         _TaskRow(
                           task: task,
                           onToggle: (isCompleted) =>
@@ -233,6 +261,34 @@ class _TaskListScreenState extends State<TaskListScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+enum _TaskFilter {
+  all('Все'),
+  active('Активные'),
+  completed('Завершённые');
+
+  const _TaskFilter(this.label);
+
+  final String label;
+}
+
+class _EmptyFilteredTasks extends StatelessWidget {
+  const _EmptyFilteredTasks({required this.filter});
+
+  final _TaskFilter filter;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = switch (filter) {
+      _TaskFilter.all => 'Задач пока нет',
+      _TaskFilter.active => 'Нет активных задач',
+      _TaskFilter.completed => 'Нет завершённых задач',
+    };
+    return Center(
+      child: Text(message, style: Theme.of(context).textTheme.titleMedium),
     );
   }
 }
