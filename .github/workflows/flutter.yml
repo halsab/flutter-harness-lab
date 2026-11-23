@@ -65,22 +65,22 @@ jobs:
         if: github.event_name == 'pull_request'
         run: flutter build web
       - name: Set up Node.js for Web E2E
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.base_ref == 'app'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Install pinned Playwright and Chromium
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.base_ref == 'app'
         run: |
           npm install --no-save --no-package-lock --no-audit --no-fund @playwright/test@1.56.1
           npx playwright install --with-deps chromium
       - name: Playwright Web E2E on built app
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.base_ref == 'app'
         run: |
           python3 -m http.server 8080 --directory build/web > /tmp/flutter-web-e2e.log 2>&1 &
           npx playwright test tests/web/my_tasks.spec.mjs --browser=chromium --reporter=line
       - name: Upload Web E2E failure evidence
-        if: failure() && github.event_name == 'pull_request'
+        if: failure() && github.event_name == 'pull_request' && github.base_ref == 'app'
         uses: actions/upload-artifact@v4
         with:
           name: web-playwright-failure
@@ -88,7 +88,7 @@ jobs:
           if-no-files-found: ignore
 
   android-e2e:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.base_ref == 'app'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
@@ -131,11 +131,7 @@ jobs:
             adb shell pm path dev.halsab.flutter_harness_lab
             adb shell am start -W -n dev.halsab.flutter_harness_lab/.MainActivity
             adb shell am force-stop dev.halsab.flutter_harness_lab
-            "$HOME/.maestro/bin/maestro" test --debug-output=build/maestro-debug maestro/flows/my_tasks_android.yaml || {
-              echo "Maestro failed; capture Android runtime errors"
-              adb logcat -d -t 350 -s AndroidRuntime:E ActivityTaskManager:E || true
-              exit 1
-            }
+            "$HOME/.maestro/bin/maestro" test --debug-output=build/maestro-debug maestro/flows/my_tasks_android.yaml || { adb logcat -d -t 350 -s AndroidRuntime:E ActivityTaskManager:E; exit 1; }
       - name: Upload Android Maestro failure evidence
         if: failure() && github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
@@ -145,3 +141,4 @@ jobs:
             build/maestro-debug/
             ~/.maestro/tests/
           if-no-files-found: warn
+          include-hidden-files: true

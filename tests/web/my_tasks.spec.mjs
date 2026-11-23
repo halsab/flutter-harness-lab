@@ -19,9 +19,9 @@ test('add, complete, persist, delete and persist deletion in Flutter Web', async
   await expect(page).toHaveTitle('Мои задачи');
   await enableFlutterSemantics(page);
 
-  const input = page.getByRole('textbox');
+  const input = page.getByRole('textbox', { name: 'Новая задача' });
   const addButton = page.getByRole('button', { name: 'Добавить задачу' });
-  const savedTask = page.getByText(taskTitle, { exact: true });
+  const savedTask = page.getByRole('group', { name: taskTitle });
 
   await expect(page.getByText('Задач пока нет', { exact: true })).toBeVisible();
 
@@ -36,7 +36,7 @@ test('add, complete, persist, delete and persist deletion in Flutter Web', async
   await expect(savedTask).toBeVisible();
   await expect(page.getByText('Задач пока нет', { exact: true })).toHaveCount(0);
 
-  const completed = page.getByRole('checkbox');
+  const completed = savedTask.getByRole('checkbox');
   await expect(completed).toHaveCount(1);
   await completed.click();
   await expect(completed).toBeChecked();
@@ -44,9 +44,9 @@ test('add, complete, persist, delete and persist deletion in Flutter Web', async
   await page.reload();
   await enableFlutterSemantics(page);
   await expect(savedTask).toBeVisible();
-  await expect(page.getByRole('checkbox')).toBeChecked();
+  await expect(savedTask.getByRole('checkbox')).toBeChecked();
 
-  await page.getByRole('button', { name: 'Удалить задачу' }).click();
+  await savedTask.getByRole('button', { name: 'Удалить задачу' }).click();
   await expect(savedTask).toHaveCount(0);
   await expect(page.getByText('Задач пока нет', { exact: true })).toBeVisible();
 
