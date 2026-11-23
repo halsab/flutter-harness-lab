@@ -8,6 +8,11 @@ import 'package:flutter_harness_lab/data/task_repository.dart';
 import 'package:flutter_harness_lab/main.dart';
 import 'package:flutter_harness_lab/models/task_item.dart';
 
+Finder get _taskInputField => find.descendant(
+  of: find.bySemanticsIdentifier('task-input'),
+  matching: find.byType(TextField),
+);
+
 void main() {
   late TaskRepository repository;
 
@@ -157,7 +162,7 @@ void main() {
     await tester.tap(find.bySemanticsIdentifier('add-task'));
     await tester.pumpAndSettle();
     expect(
-      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+      tester.widget<TextField>(_taskInputField).controller!.text,
       isEmpty,
     );
 
@@ -245,7 +250,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: delayedRepository));
 
     expect(
-      tester.widget<TextField>(find.byType(TextField).first).enabled,
+      tester.widget<TextField>(_taskInputField).enabled,
       isFalse,
     );
     expect(
@@ -260,7 +265,7 @@ void main() {
 
     expect(find.text('Saved before startup'), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField).first).enabled,
+      tester.widget<TextField>(_taskInputField).enabled,
       isTrue,
     );
   });
@@ -295,7 +300,7 @@ void main() {
 
     expect(find.text('Не удалось сохранить задачи'), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+      tester.widget<TextField>(_taskInputField).controller!.text,
       'Retry this task',
     );
     expect(find.byType(Checkbox), findsNothing);
@@ -307,7 +312,7 @@ void main() {
     expect(flakyRepository.tasks.single.title, 'Retry this task');
     expect(find.byType(Checkbox), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+      tester.widget<TextField>(_taskInputField).controller!.text,
       isEmpty,
     );
   });
@@ -369,7 +374,7 @@ void main() {
     expect(delayedRepository.startedTitles, ['First write']);
     expect(delayedRepository.tasks, hasLength(1));
     expect(
-      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+      tester.widget<TextField>(_taskInputField).controller!.text,
       isEmpty,
     );
   });
