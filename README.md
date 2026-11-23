@@ -8,8 +8,10 @@ generated using the official Flutter SDK.
 - `main` — unmodified SDK-generated default counter application for Android,
   iOS and Web. **Keep this branch clean** for reproducible fresh-start checks.
 - `app` — the same initial counter application, plus Flutter Harness integration:
-  OpenCode V2 model routing, Superpowers, MCP definitions, project instructions
-  and 24 official Flutter/Dart skills. The default profile now uses a lean\nfirst-party autonomous agent workflow, rather than loading Superpowers'\nmandatory interactive planning approvals. Future app features arrive through
+  OpenCode V2 model routing, MCP definitions, project instructions
+  and 24 official Flutter/Dart skills. The default profile now uses a lean
+first-party autonomous agent workflow, rather than loading Superpowers'
+mandatory interactive planning approvals. Future app features arrive through
   feature branches and human-reviewed PRs into `app`.
 
 The installer and baseline are documented in
@@ -23,8 +25,7 @@ The owner has launched the default counter application on Android Emulator,
 iOS Simulator and Chrome and checked the local Flutter toolchain. Basic
 Dart, Maestro, Playwright, Chrome DevTools and Xcode MCP calls have been
 confirmed. Sol/Luna model availability was confirmed using explicit CLI
-model selections. Real subagent handoffs, repeatable Maestro/Playwright E2E
-flows and a complete agent-authored feature PR are still to be tested.
+model selections. Subagent routing was verified from a local OpenCode export. The first agent-authored task-list PR (#5) reached GitHub with passing CI and an iOS Maestro flow. The revised autonomous workflow is still unverified at runtime.
 
 GitHub Actions tests formatting, Flutter analysis, widget tests and Web
 builds on pull requests. It also validates project OpenCode model routing,
@@ -51,6 +52,11 @@ simulators or validate personal ChatGPT authentication.
 OpenCode `permissions` require approval for external paths and Git pushes,
 while denying common merges, force pushes and publishing operations.
 These are *not a sandbox*; configure repository-side branch protection too.
-Default profile disables Chrome DevTools MCP until needed to reduce the\nregular tool surface. It does not uninstall tools or assert exact token\nsavings. Use the harness session-usage script to measure model/tool usage.\nFor an optional interactive design process, upstream Superpowers may still\nbe enabled separately.\nSee [model routing and safety](https://github.com/halsab/flutter-harness/blob/main/docs/model-routing.md).
+Default profile disables Chrome DevTools MCP until needed to reduce the
+regular tool surface. It does not uninstall tools or assert exact token
+savings. Use the harness session-usage script to measure model/tool usage.
+For an optional interactive design process, upstream Superpowers may still
+be enabled separately.
+See [model routing and safety](https://github.com/halsab/flutter-harness/blob/main/docs/model-routing.md).
 
 Installing into existing or legacy Flutter projects remains out of scope for v0.
