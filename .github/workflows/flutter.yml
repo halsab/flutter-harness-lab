@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, app]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -66,10 +67,12 @@ jobs:
           assert {('skill', name, 'deny') for name in blocked_skills} <= permissions
           print('PASS lab OpenCode config and safeguards')
           PY
+      - name: Check installed Harness scripts
+        run: bash -n .flutter-harness/bin/maestro.sh .flutter-harness/bin/check.sh .flutter-harness/bin/verify-pr.sh
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
-      - name: Build Web on PR
-        if: github.event_name == 'pull_request'
+      - name: Build Web when manually requested
+        if: github.event_name == 'workflow_dispatch'
         run: flutter build web

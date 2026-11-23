@@ -47,7 +47,7 @@
       ]
     },
     "reviewer": {
-      "description": "Perform ONE focused final diff review, prioritizing correctness, data loss, security and regressions. Read-only; no whole-project exploration or repeated follow-up reviews.",
+      "description": "Perform ONE independent read-only review of the task diff against its integration base, including new task files. Report material failures with file, scenario, impact and evidence; no edits, cosmetic-only findings or repeated full reviews.",
       "mode": "subagent",
       "model": "openai/gpt-6-luna#medium",
       "permissions": [
@@ -131,10 +131,8 @@
       },
       "maestro": {
         "type": "local",
-        "command": [
-          "maestro",
-          "mcp"
-        ]
+        "command": ["bash", ".flutter-harness/bin/maestro.sh", "mcp"],
+        "cwd": "."
       },
       "playwright": {
         "type": "local",

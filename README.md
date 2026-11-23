@@ -9,9 +9,9 @@ generated using the official Flutter SDK.
   iOS and Web. **Keep this branch clean** for reproducible fresh-start checks.
 - `app` — the same initial counter application, plus Flutter Harness integration:
   OpenCode V2 model routing, MCP definitions, project instructions
-  and 24 official Flutter/Dart skills. The default profile now uses a lean
-first-party autonomous agent workflow, rather than loading Superpowers'
-mandatory interactive planning approvals. Future app features arrive through
+  and 24 official Flutter/Dart skills. The default profile uses a lean
+  first-party autonomous agent workflow instead of Superpowers' mandatory
+  interactive planning approvals. Future app features arrive through
   feature branches and human-reviewed PRs into `app`.
 
 The installer and baseline are documented in
@@ -27,10 +27,11 @@ Dart, Maestro, Playwright, Chrome DevTools and Xcode MCP calls have been
 confirmed. Sol/Luna model availability was confirmed using explicit CLI
 model selections. Subagent routing was verified from a local OpenCode export. The first agent-authored task-list PR (#5) reached GitHub with passing CI and an iOS Maestro flow. The revised autonomous workflow is still unverified at runtime.
 
-GitHub Actions tests formatting, Flutter analysis, widget tests and Web
-builds on pull requests. It also validates project OpenCode model routing,
-MCP definitions and permission guardrails. Hosted CI **does not** run iOS
-simulators or validate personal ChatGPT authentication.
+GitHub Actions checks formatting, Flutter analysis and widget tests on PRs.
+Web compilation is available by manually dispatching the workflow; Android,
+iOS and Web UI tests remain the local agent's responsibility. CI also validates
+OpenCode routing, installed Harness scripts and permission guardrails.
+Hosted CI does not run device simulators or personal authentication.
 
 ## Workflow
 
@@ -59,4 +60,6 @@ For an optional interactive design process, upstream Superpowers may still
 be enabled separately.
 See [model routing and safety](https://github.com/halsab/flutter-harness/blob/main/docs/model-routing.md).
 
-Installing into existing or legacy Flutter projects remains out of scope for v0.
+The lab's existing Harness files are synchronized explicitly in this PR;
+the normal installer remains non-overwriting. Installing into unrelated
+existing or legacy Flutter projects remains out of scope for v0.
