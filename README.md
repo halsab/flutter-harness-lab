@@ -5,6 +5,26 @@ Public test project for [Flutter Harness](https://github.com/halsab/flutter-harn
 - app: integration branch for the evolving example task application.
 - New features: task branches with PRs into app; only owner merges.
 
+## Delivery completion guard
+
+The project includes a local OpenCode V2 plugin under
+`.opencode/plugins/delivery-guard/`, installed from Flutter Harness.
+It records the initial Git state on a feature request and uses OpenCode's
+experimental `session.hook("experimental.idle")` to verify that delivery
+reached an open PR into `app`, containing the same commit as local HEAD.
+If not, it asks the same agent to continue delivery, **at most twice**,
+then fails the execution instead of silently claiming DONE.
+
+The plugin makes no GitHub writes or Git commits, does not bypass push
+approvals, and does not add Android/iOS/Web E2E. The one standard Flutter
+check and concise task-diff self-review remain the default verification.
+This is a bounded delivery backstop rather than a guarantee against
+provider interruption or all OpenCode-version differences.
+
+**Runtime check still needed on the owner's Mac.** Confirm the plugin is
+loaded in a new OpenCode session and that a short feature reaches a PR.
+Older sessions do not automatically adopt updated plugins.
+
 ## Autonomous workflow
 
 The goal is fast, stable implementation from one concise user requirement.
