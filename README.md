@@ -1,114 +1,64 @@
 # Flutter Harness Lab
 
-Public integration-test project for [Flutter Harness](https://github.com/halsab/flutter-harness),
-generated using the official Flutter SDK.
+Public test project for [Flutter Harness](https://github.com/halsab/flutter-harness).
+- main: unmodified SDK-generated starter; leave untouched.
+- app: integration branch for the evolving example task application.
+- New features: task branches with PRs into app; only owner merges.
 
-## Branch contract
+## Autonomous workflow
 
-- `main` — unmodified SDK-generated default counter application for Android,
-  iOS and Web. **Keep this branch clean** for reproducible fresh-start checks.
-- `app` — the same initial counter application, plus Flutter Harness integration:
-  OpenCode V2 model routing, MCP definitions, project instructions
-  and 24 official Flutter/Dart skills. The default profile uses a lean
-  first-party autonomous agent workflow instead of Superpowers' mandatory
-  interactive planning approvals. Future app features arrive through
-  feature branches and human-reviewed PRs into `app`.
+The goal is fast, stable implementation from one concise user requirement.
+The default OpenCode project skill uses GPT-6 Luna medium for implementation
+(with the usual caveat that an existing UI-selected variant can override it).
 
-The installer and baseline are documented in
-[flutter-harness/scripts/bootstrap-lab.sh](https://github.com/halsab/flutter-harness/blob/main/scripts/bootstrap-lab.sh)
-and [the harness README](https://github.com/halsab/flutter-harness).
-Bootstrap has already been completed; **do not rerun it to reset `app`**.
+For ordinary features:
+1. Implement with a small coherent change.
+2. Write only useful Dart unit tests for business logic/persistence and
+   selective Flutter widget tests for significant state behavior.
+3. Run one standard Flutter code check (format, analyzer, flutter test).
+4. Self-review the diff once; use a separate reviewer only for material
+   data/security/architecture/concurrency risks or explicit request.
+5. Push with permission and create/update one PR into app; owner merges.
 
-## Local verification
+**There is no default Android+iOS+Web E2E requirement.** Heavy Maestro,
+Playwright, emulator/simulator or full-build checks are reserved for platform
+integration or other genuinely critical risks, or explicit requests. Such
+checks should be committed/repeatable scripts with assertions, not subjective
+AI screenshot exploration. Run only relevant platforms. Optional E2E unrun
+is NOT RUN (not required), not a blocker or reason for Draft.
 
-The owner has launched Flutter on Android Emulator, iOS Simulator and Chrome
-and checked the local toolchain. Basic Dart, Maestro, Playwright, Chrome
-DevTools and Xcode MCP connectivity is confirmed. The task-list PR (#5)
-and autonomous title-edit PR (#6) reached GitHub; PR #6 had passing CI
-and actual Android Maestro / Web Playwright tool calls. An audit of that
-second run found no iOS Maestro invocation, three reviewer shell permission
-denials, and a main-agent session using Luna High despite the project
-default Medium. This project-sync PR applies the focused Harness fixes;
-the next fresh OpenCode run must validate them at runtime.
+A failed required check or unresolved material risk does require Draft.
+Hosted GitHub CI validates Flutter formatting, analyzer, tests and basic
+config/scripts; it does not prove mobile or Web E2E execution.
 
-GitHub Actions checks formatting, Flutter analysis and widget tests on PRs.
-Web compilation can be requested locally via the Harness full check; Android,
-iOS and Web UI tests remain the local agent's responsibility. CI also validates
-OpenCode routing, installed Harness scripts and permission guardrails.
-Hosted CI does not run device simulators or personal authentication.
+## Why the policy changed
 
-## Browser/device verification after the third-trial failure
+In task-filter PR #8, a new active task was successfully saved on Android but
+hidden under the Completed filter. The agent wrongly blamed Maestro input,
+repeated tool attempts and spent disproportionate time testing a small UI
+feature. The new policy emphasizes known starting state, unit/widget tests,
+scripted assertions where justified, and a strict budget for manual tool
+diagnosis. Heavy E2E is not a standard feature-acceptance ritual.
 
-The task-filter PR (#8) reported Flutter Web Chrome debugger failure and
-contained no Android/iOS Maestro outcomes. GitHub CI format/analyze/test PASS
-does not prove device E2E. A new Web preview starts an ordinary loopback HTTP
-server from a Flutter release build, avoiding the Chrome debug-service
-connection entirely:
+## Optional tools
 
-```sh
-python3 .flutter-harness/bin/web-preview.py start
-# Use printed URL with Playwright MCP; assert the filter in the real UI
-python3 .flutter-harness/bin/web-preview.py stop
-```
+If a Web browser flow is actually necessary, build/serve on localhost without
+the Flutter Chrome debug-service handshake:
 
-Run Android and iOS Maestro regardless of the Web outcome. Record local
-results with target, tool, assertions, and actual evidence reference in
-`.flutter-harness/verification.json` and verify them:
+    python3 .flutter-harness/bin/web-preview.py start
+    # Run targeted Playwright scenario with real assertions
+    python3 .flutter-harness/bin/web-preview.py stop
 
-```sh
-python3 .flutter-harness/bin/verify-e2e.py .flutter-harness/verification.json --profile mobile-web
-```
+The existing verify-e2e.py is a legacy OPTIONAL checklist for explicitly
+requested all-platform verification. Do not create verification.json on
+routine features; do not treat agent-written evidence as independent proof.
+MCP connections for Dart, Maestro, Playwright and optional Xcode remain
+available but availability alone does not make those tools mandatory.
 
-The gate requires all three platforms to report PASS before calling
-verification complete. If a platform fails or is unavailable, the PR must
-be **draft** and document limitations. The report checker only validates
-completeness, not whether an LLM-reported result is true; inspect OpenCode
-session tool calls when reviewing. Lab CI also checks that Flutter feature
-PR descriptions disclose all three platform statuses, without running
-expensive hosted emulators.
+## Existing-project installation
 
-## Workflow
-
-1. Give the agent an outcome-focused request in interactive OpenCode. It asks
-   only material product/architecture/security questions, requesting at most
-   one short design signoff if necessary.
-2. The agent chooses a feature branch in the current checkout from `app`,
-   plans internally, and implements. No second plan approval, worktree choice
-   or execution-mode question.
-3. Luna medium is the configured implementation default; confirm the active
-   variant in the new OpenCode session because a retained UI selection can
-   override it. A fresh-context Luna medium reviewer checks the complete
-   final task diff once using individual allowlisted read-only Git commands
-   and file reads (OPEN if any task diff is inaccessible); consult Sol medium
-   only for hard architecture or diagnosis.
-4. Run Flutter tests/analyze, discover Android/iOS targets, and run Maestro
-   on both when available, including a booted iOS Simulator. Compile-only iOS
-   checks do not count as iOS UI tests. Use Playwright on Web and assert the
-   exact intended result after actions and persistence. Report independent
-   Android/iOS/Web PASS/FAIL/BLOCKED/SKIPPED results with evidence.
-5. Automatically attempt push and a PR targeting `app`, honoring the
-   separate tool permission prompt. **The owner reviews and merges**.
-   No automatic PR merge or golden baseline acceptance.
-
-OpenCode `permissions` require approval for external paths and Git pushes,
-while denying common merges, force pushes and publishing operations.
-These are *not a sandbox*; configure repository-side branch protection too.
-Default profile disables Chrome DevTools MCP until needed to reduce the
-regular tool surface. It does not uninstall tools or assert exact token
-savings. Use the harness session-usage script to measure model/tool usage.
-For an optional interactive design process, upstream Superpowers may still
-be enabled separately.
-See [model routing and safety](https://github.com/halsab/flutter-harness/blob/main/docs/model-routing.md).
-
-The lab's existing Harness files are synchronized explicitly via small
-integration PRs; the normal installer remains non-overwriting. To run the
-next trial after merging the updated Harness and Lab configuration PRs:
-update local `app`, select Luna **Medium** in a **new OpenCode session**
-(not just `opencode debug config`), ensure `flutter devices` lists both
-the Android emulator and an iOS Simulator, and give the agent only a short
-feature request. Keep CI lightweight; Android/iOS Maestro and Web Playwright
-remain local agent responsibilities. Do not merge a feature PR until its
-verification evidence has been reviewed.
-
-Installing into unrelated existing or legacy Flutter projects remains out
-of scope for v0.
+The upstream installer deliberately preserves an existing project
+opencode.jsonc and skill/AGENTS files. Harness policy updates must be
+explicitly synced to this Lab via a configuration-only PR. Lab main must
+remain the untouched SDK starter. For installation and model-routing details,
+see upstream README and docs/verification-policy.md.
