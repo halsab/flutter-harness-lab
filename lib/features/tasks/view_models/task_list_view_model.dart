@@ -117,10 +117,7 @@ class TaskListViewModel extends ChangeNotifier {
     if (!canMutate) {
       return;
     }
-    _persistMutation(
-      () => _repository.duplicateTask(id),
-      onFailure: onFailure,
-    );
+    _persistMutation(() => _repository.duplicateTask(id), onFailure: onFailure);
   }
 
   void deleteCompletedTasks({required void Function() onFailure}) {

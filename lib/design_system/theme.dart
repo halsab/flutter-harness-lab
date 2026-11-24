@@ -20,15 +20,18 @@ abstract final class AppColors {
 }
 
 abstract final class AppTextStyles {
-  static TextStyle body(BuildContext context) =>
-      m.Theme.of(context).textTheme.bodyMedium ??
-      DefaultTextStyle.of(context).style;
+  static TextStyle body(BuildContext context) {
+    final textTheme = m.Theme.of(context).textTheme;
+    return textTheme.bodyMedium ?? DefaultTextStyle.of(context).style;
+  }
 
-  static TextStyle heading(BuildContext context) =>
-      m.Theme.of(context).textTheme.titleLarge ??
-      DefaultTextStyle.of(context).style;
+  static TextStyle heading(BuildContext context) {
+    final textTheme = m.Theme.of(context).textTheme;
+    return textTheme.titleLarge ?? DefaultTextStyle.of(context).style;
+  }
 
-  static TextStyle caption(BuildContext context) =>
-      (m.Theme.of(context).textTheme.bodySmall ?? body(context))
-          .copyWith(color: AppColors.muted(context));
+  static TextStyle caption(BuildContext context) {
+    final style = m.Theme.of(context).textTheme.bodySmall ?? body(context);
+    return style.copyWith(color: AppColors.muted(context));
+  }
 }

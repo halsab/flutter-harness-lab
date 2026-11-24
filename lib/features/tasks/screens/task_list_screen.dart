@@ -223,7 +223,9 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       )
                     else ...[
                       Padding(
-                        padding: const EdgeInsets.only(bottom: AppTokens.space8),
+                        padding: const EdgeInsets.only(
+                          bottom: AppTokens.space8,
+                        ),
                         child: Text(
                           'Незавершённых задач: $activeTaskCount',
                           style: Theme.of(context).textTheme.titleMedium,
