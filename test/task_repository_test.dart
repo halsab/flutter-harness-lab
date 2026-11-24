@@ -130,6 +130,31 @@ void main() {
       expect(restored, hasLength(1));
       expect(restored.single.id, 'new');
     });
+
+    test('deletes every completed task and preserves active tasks', () async {
+      await repository.saveTasks([
+        const TaskItem(id: 'active-1', title: 'First active'),
+        const TaskItem(
+          id: 'completed-1',
+          title: 'First completed',
+          isCompleted: true,
+        ),
+        const TaskItem(id: 'active-2', title: 'Second active'),
+        const TaskItem(
+          id: 'completed-2',
+          title: 'Second completed',
+          isCompleted: true,
+        ),
+      ]);
+
+      final remaining = await repository.deleteCompletedTasks();
+
+      expect(remaining.map((task) => task.id), ['active-1', 'active-2']);
+      expect((await repository.loadTasks()).map((task) => task.id), [
+        'active-1',
+        'active-2',
+      ]);
+    });
   });
 }
 

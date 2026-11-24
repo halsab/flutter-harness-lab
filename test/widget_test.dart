@@ -107,6 +107,77 @@ void main() {
     expect((await filterRepository.loadTasks()).single.isCompleted, isTrue);
   });
 
+  testWidgets('deletes all completed tasks regardless of filter and search', (
+    tester,
+  ) async {
+    final deleteRepository = _EditableTaskRepository([
+      const TaskItem(id: 'active', title: 'Keep this active task'),
+      const TaskItem(
+        id: 'completed-visible',
+        title: 'Matching completed task',
+        isCompleted: true,
+      ),
+      const TaskItem(
+        id: 'completed-hidden',
+        title: 'Other completed task',
+        isCompleted: true,
+      ),
+    ]);
+    await tester.pumpWidget(MyApp(repository: deleteRepository));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.bySemanticsIdentifier('task-search'),
+      'Matching',
+    );
+    await tester.tap(find.text('Активные'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Удалить завершённые'));
+    await tester.pumpAndSettle();
+    expect(find.text('Удалить завершённые задачи?'), findsOneWidget);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    expect(deleteRepository.tasks, hasLength(3));
+
+    await tester.tap(find.text('Удалить завершённые'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Удалить').last);
+    await tester.pumpAndSettle();
+
+    expect(deleteRepository.tasks.map((task) => task.id), ['active']);
+    expect(find.text('Keep this active task'), findsNothing);
+    expect(find.text('Незавершённых задач: 1'), findsOneWidget);
+  });
+
+  testWidgets('keeps tasks unchanged when bulk deletion cannot be saved', (
+    tester,
+  ) async {
+    final failedRepository = _FailingCompletedDeleteRepository([
+      const TaskItem(id: 'active', title: 'Keep this task'),
+      const TaskItem(
+        id: 'completed',
+        title: 'Do not delete on failure',
+        isCompleted: true,
+      ),
+    ]);
+    await tester.pumpWidget(MyApp(repository: failedRepository));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Удалить завершённые'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Удалить').last);
+    await tester.pumpAndSettle();
+
+    expect(failedRepository.tasks.map((task) => task.id), [
+      'active',
+      'completed',
+    ]);
+    expect(find.text('Keep this task'), findsOneWidget);
+    expect(find.text('Do not delete on failure'), findsOneWidget);
+    expect(find.text('Не удалось сохранить задачи'), findsOneWidget);
+  });
+
   testWidgets('searches titles case-insensitively and combines with filters', (
     tester,
   ) async {
@@ -225,7 +296,9 @@ void main() {
     expect(find.text('First task'), findsOneWidget);
     expect(find.text('Second task'), findsOneWidget);
 
-    await tester.tap(find.bySemanticsIdentifier('delete-${tasks.last.id}'));
+    final deleteButton = find.bySemanticsIdentifier('delete-${tasks.last.id}');
+    await tester.ensureVisible(deleteButton);
+    await tester.tap(deleteButton);
     await tester.pumpAndSettle();
 
     final finalTasks = await repository.loadTasks();
@@ -453,6 +526,21 @@ class _EditableTaskRepository extends TaskRepository {
       isCompleted: tasks[index].isCompleted,
     );
     return List.of(tasks);
+  }
+
+  @override
+  Future<List<TaskItem>> deleteCompletedTasks() async {
+    tasks.removeWhere((task) => task.isCompleted);
+    return List.of(tasks);
+  }
+}
+
+class _FailingCompletedDeleteRepository extends _EditableTaskRepository {
+  _FailingCompletedDeleteRepository(super.tasks);
+
+  @override
+  Future<List<TaskItem>> deleteCompletedTasks() {
+    throw StateError('Storage is temporarily unavailable');
   }
 }
 

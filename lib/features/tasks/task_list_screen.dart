@@ -105,6 +105,32 @@ class _TaskListScreenState extends State<TaskListScreen> {
     _persistMutation(() => _repository.deleteTask(task.id));
   }
 
+  Future<void> _deleteCompletedTasks() async {
+    if (_isLoading || _loadFailed || !_tasks.any((task) => task.isCompleted)) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить завершённые задачи?'),
+        content: const Text('Это действие нельзя отменить.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      _persistMutation(_repository.deleteCompletedTasks);
+    }
+  }
+
   Future<void> _editTask(TaskItem task) async {
     if (_isLoading || _loadFailed) {
       return;
@@ -246,6 +272,15 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         },
                       ),
                       const SizedBox(height: 12),
+                      if (_tasks.any((task) => task.isCompleted))
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: _deleteCompletedTasks,
+                            icon: const Icon(Icons.delete_sweep_outlined),
+                            label: const Text('Удалить завершённые'),
+                          ),
+                        ),
                     ],
                     if (_isLoading)
                       const SizedBox(
