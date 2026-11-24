@@ -7,12 +7,12 @@
       "model": "openai/gpt-6-luna#medium"
     },
     "plan": {
-      "model": "openai/gpt-6.2-sol#medium"
+      "model": "openai/gpt-6-luna#high"
     },
     "architect": {
-      "description": "Consult ONLY for genuinely complex architecture or hard diagnosis. Answer one focused question concisely, then return to the Luna implementer. Read-only.",
+      "description": "Read-only Luna High. For complex changes analyze product behavior, actual dependency/call graph, contracts, affected consumers, data/state risks, and produce independently verifiable slices with explicit dependencies and file ownership. Or diagnose one hard failure. Return a concise actionable plan; do not implement, publish or spawn children.",
       "mode": "subagent",
-      "model": "openai/gpt-6.2-sol#medium",
+      "model": "openai/gpt-6-luna#high",
       "permissions": [
         {
           "action": "edit",
@@ -48,11 +48,21 @@
           "action": "shell",
           "resource": "git log *",
           "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "question",
+          "resource": "*",
+          "effect": "deny"
         }
       ]
     },
     "reviewer": {
-      "description": "Perform ONE independent read-only review of the entire task diff and new task files. Use separate allowed Git commands (status, merge-base, diff) without shell chaining or substitution; use read for files. If full diff cannot be inspected, report OPEN, not PASSED. Findings need file, failure scenario, impact and evidence; no edits or repeated full reviews.",
+      "description": "Perform ONE independent read-only review of the entire task diff and new task files. Use separate allowed Git commands (status, merge-base, diff) without shell chaining or substitution; use read for files. If full diff cannot be inspected, report OPEN, not PASSED. Findings need file, failure scenario, impact and evidence; no edits or repeated full reviews. For material UX changes inspect supplied actual rendered screenshots against the chosen design and behavior contract; report concrete visual or interaction defects. Static concepts are not runtime evidence.",
       "mode": "subagent",
       "model": "openai/gpt-6-luna#medium",
       "permissions": [
@@ -107,17 +117,201 @@
     },
     "summary": {
       "model": "openai/gpt-6-luna#low"
+    },
+    "worker": {
+      "description": "Implement ONE small, well-specified source/test slice with stable contracts. Edit only the assigned exact files, return a concise result and suggested targeted check. No shell/builds, Git publication, contract changes, additional agents or user questions; report conflicts to parent. Parent runs checks and integrates.",
+      "mode": "subagent",
+      "model": "openai/gpt-6-luna#low",
+      "permissions": [
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "subagent",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "question",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "browser",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "dart_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "maestro_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "playwright_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "chrome-devtools_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "xcode_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "xcodebuild_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "generate_image",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "webfetch",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "websearch",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "advisor": {
+      "description": "Optional focused architectural decision consultant. Sol Medium, at most one call per original task, only for a consequential difficult decision with a self-contained compact evidence packet. Compare viable options, side effects, invariants, decision and verification; return a concise answer or identify missing evidence. Never scan the repository, implement, run commands, delegate, review the whole task or request user input. Return control to Luna.",
+      "mode": "subagent",
+      "model": "openai/gpt-6.2-sol#medium",
+      "permissions": [
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "subagent",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "question",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "browser",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "dart_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "maestro_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "playwright_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "chrome-devtools_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "xcode_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "xcodebuild_*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "generate_image",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "webfetch",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "websearch",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "list",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "skill",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
     }
   },
   "providers": {
     "openai": {
       "models": {
-        "gpt-6.2-sol": {
+        "gpt-6-luna": {
           "settings": {
             "reasoningEffort": "medium"
           }
         },
-        "gpt-6-luna": {
+        "gpt-6.2-sol": {
           "settings": {
             "reasoningEffort": "medium"
           }
@@ -141,7 +335,11 @@
       },
       "maestro": {
         "type": "local",
-        "command": ["bash", ".flutter-harness/bin/maestro.sh", "mcp"],
+        "command": [
+          "bash",
+          ".flutter-harness/bin/maestro.sh",
+          "mcp"
+        ],
         "cwd": "."
       },
       "playwright": {
