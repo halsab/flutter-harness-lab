@@ -2,6 +2,14 @@
 ## Flutter Harness — fast autonomous Flutter development
 Project tooling: https://github.com/halsab/flutter-harness
 Read .flutter-harness/config.json and load the flutter-harness project skill.
+Read .flutter-harness/PRODUCT.md and .flutter-harness/product.json for product
+architecture, UX, Adaptive UI and reusable design system. Adopt the pending
+foundation in the next product migration; activate only after real integration.
+The standard check and CI enforce convention rules; never bypass or downgrade.
+For material UX changes inspect actual rendered screenshots, including Cupertino
+and Material for initial adoption, and supply them to the same reviewer.
+No routine E2E or separate designer agent. Sol for difficult decisions or
+repeated substantive failures; anticipate rejected-write tests before review.
 
 One short feature request authorizes implementation, necessary checks and PR.
 Ask only unresolved material product/security decisions, not technical plans,

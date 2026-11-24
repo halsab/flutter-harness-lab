@@ -50,3 +50,5 @@ app.*.map.json
 # Flutter Harness local browser and E2E artifacts
 /.playwright-mcp/
 /.flutter-harness/verification.json
+
+/.flutter-harness/previews/
