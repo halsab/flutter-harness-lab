@@ -102,8 +102,12 @@ safe areas, responsive layout, semantics, and large-text support.
 For a substantial new screen, flow or redesign follow the compact DESIGN.md
 guide in .flutter-harness/templates/product/. Define the behavior first;
 choose a visual direction using relevant actual reference images and Material
-patterns before delegating or coding UI. Keep the selected direction and
-interaction notes in the task handoff. No mandatory mockup for ordinary UI
+patterns before delegating or coding UI. For explicit redesigns inspect the
+populated baseline if available, compare two concise structural wireframes,
+and record the chosen direction, baseline defects and observable visual
+acceptance in the existing behavior contract. Preserve functionality, not
+an ineffective composition. Keep the selected direction and interaction
+notes in the task handoff. No mandatory mockup for ordinary UI
 changes, no separate design-review agent, no premium model for visual design.
 
 ## Visual acceptance and review
@@ -113,7 +117,11 @@ change, inspect actual rendered screenshots of the changed screen(s), with
 representative content and the key changed state. For initial Material adoption
 or a shared theme change inspect light and dark on one representative runtime platform. Inspect another platform only for an
 actual platform-specific change or risk; inspect wide layout when affected.
-For isolated changes inspect only affected states and representative widths.
+For substantial redesigns inspect the populated final screen and key changed
+interaction at a representative compact width in both themes; compare the
+baseline at comparable content and width if available. A single screenshot
+of an empty screen or a successful launch is insufficient. For isolated
+changes inspect only affected states and representative widths.
 Check narrow/large layouts and large text using fast widget assertions where
 meaningful, plus a representative desktop width if Web layout changes.
 Use actual local simulator/browser captures, not mockups or Ahem widget-test
@@ -128,7 +136,9 @@ architecture and UX, not three separate agents. If runtime visual review is
 unavailable, say BLOCKED for required visual acceptance, do not claim PASS.
 A screenshot is semantic review evidence, not an executable functional test.
 No routine visual/E2E checks for non-visual changes, no golden auto-approval.
-Owner makes final aesthetic acceptance.
+For material visual tasks the same reviewer reports an explicit VISUAL: PASS
+before VERDICT: PASS only after opening actual runtime images and comparing
+them to the user job and baseline/target. Owner makes final aesthetic acceptance.
 
 ## Adoption and checks
 

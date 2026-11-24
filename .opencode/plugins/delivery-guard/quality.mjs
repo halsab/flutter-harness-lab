@@ -17,6 +17,11 @@ const textOf = (content) => typeof content === "string" ? content :
 export function testNames(source) {
   return [...source.matchAll(/\btest(?:Widgets)?\s*\(\s*(['"])([^'"\n]+)\1/g)].map(x => x[2]);
 }
+const visualRisk = "material UI redesign or design-system change";
+// Lexical hints, not semantic understanding. Do not classify every widget edit as a redesign.
+export function explicitVisualRequest(request = "") {
+  return /(?:redesign|design.system|ui\s*\/\s*ux|new\s+(?:screen|page|flow)|(?:rework|overhaul|revamp)\b[^\n.!?]{0,70}\b(?:interface|screen|layout|ui)\b|редизайн|дизайн.систем|адаптивн\p{L}*\s+(?:дизайн|интерфейс)|(?:переработ\p{L}*|передел\p{L}*|перепроектир\p{L}*|обнов\p{L}*\s+дизайн)[^\n.!?]{0,70}(?:интерфейс|экран|композици|дизайн)|нов\p{L}*\s+(?:экран|страниц))/iu.test(request);
+}
 export function classify(paths, request = "", removed = [], diff = "") {
   const reasons = [];
   if (paths.some(p => /^lib\//i.test(p) &&
@@ -28,9 +33,12 @@ export function classify(paths, request = "", removed = [], diff = "") {
       /(?:\bdelete(?:All|Completed|Many|Bulk)\w*\s*\(|\b(?:clear|remove)All\w*\s*\(|\bDROP\s+TABLE\b)/i.test(diff))) {
     reasons.push("destructive or bulk operation");
   }
-  if (paths.some(p => p.startsWith("lib/design_system/") || p.startsWith("lib/app/")) ||
-      (paths.some(p => p.startsWith("lib/")) && /(?:redesign|design.system|ui\s*\/\s*ux|редизайн|дизайн.систем|адаптивн\p{L}*\s+(?:дизайн|интерфейс))/iu.test(request))) {
-    reasons.push("product architecture or material UI/design-system change");
+  if (paths.some(p => p.startsWith("lib/app/"))) {
+    reasons.push("product architecture changed");
+  }
+  if (paths.some(p => p.startsWith("lib/design_system/")) ||
+      (paths.some(p => p.startsWith("lib/")) && explicitVisualRequest(request))) {
+    reasons.push(visualRisk);
   }
   if (removed.length) reasons.push("tests disappeared after a failed check: " + removed.join("; "));
   return reasons;
@@ -54,10 +62,13 @@ export function standardCheck(command) {
   // invocation, not a quick check or an unrelated command mentioning the script.
   return /^[ \t]*(?:bash[ \t]+)?(?:\.\/)?\.flutter-harness\/bin\/check\.sh[ \t]+[^\s;&|<>]+(?:[ \t]+standard(?:[ \t]+(?:mobile-web|mobile))?)?[ \t]*$/.test(command || "");
 }
-export function finalVerdict(messages) {
+export function finalVerdict(messages, requireVisual = false) {
   if (!Array.isArray(messages)) return false;
   const final = [...messages].reverse().find(m => m.type === "assistant" && textOf(m.content).trim());
-  return /(?:^|\n)VERDICT: PASS\s*$/.test(textOf(final?.content));
+  const text = textOf(final?.content);
+  return requireVisual
+    ? /(?:^|\n)VISUAL: PASS[ \t]*\r?\nVERDICT: PASS\s*$/.test(text)
+    : /(?:^|\n)VERDICT: PASS\s*$/.test(text);
 }
 export function gateReason(candidate, state, reviewPassed) {
   if (state.lastCheckFailed && state.passedDigest !== candidate.digest) {
@@ -136,7 +147,7 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
     const child = await ctx.session.get({ sessionID: state.review.childID });
     if (child.parentID !== id || child.agent !== "reviewer" || child.outcome !== "succeeded") return false;
     if (!matchingReviewModel(child.model, change.effort)) return false;
-    return finalVerdict(await ctx.session.context({ sessionID: state.review.childID }));
+    return finalVerdict(await ctx.session.context({ sessionID: state.review.childID }), change.reasons.includes(visualRisk));
   }
   async function status(id) {
     const v = await view(id);
@@ -177,7 +188,7 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
       "Risk flags: " + (v.change.reasons.join("; ") || "requested review"),
       v.change.removed.length ? "Tests removed after a failed run: " + v.change.removed.join("; ") : "",
       v.change.reasons.some(r => /persistent data|destructive|tests disappeared/.test(r)) ? "For rejected persistence writes, verify the real repository against a seeded storage double that rejects only the write, not a replacement empty store. Assert reload and preserved records. Reject unsupported claims, missing important assertions, and removed failing tests without a valid replacement." : "Reject unsupported claims and missing important assertions.",
-      v.change.reasons.some(r => r.includes("material UI")) ? "Apply .flutter-harness/PRODUCT.md and templates/product/DESIGN.md under .flutter-harness: compare actual rendered evidence to the selected visual direction and behavior contract. Check hierarchy, craft, discoverability, scope and interaction defects, accessibility and design-system reuse. If required visual evidence is missing or cannot be inspected, report CHANGES_REQUIRED; do not claim visual PASS from source alone. Architecture-only changes do not need screenshots." : "",
+      v.change.reasons.includes(visualRisk) ? "Apply the visual acceptance checklist in .flutter-harness/templates/product/DESIGN.md. Actually open the final populated runtime captures and the baseline when available, compare at comparable viewport/content, and name the evidence and concrete differences. Inspect the visual plan, content start/density, persistent controls and secondary actions, readable long labels, selected state, changed interaction, and both themes when required. A full redesign cannot pass just because sorting works, spacing changed, or the app launches. Require a justified hierarchy and material improvement over the baseline. If required captures cannot be inspected, or a material visual defect remains, report VISUAL: CHANGES_REQUIRED followed by VERDICT: CHANGES_REQUIRED. On visual acceptance end with VISUAL: PASS on the line immediately before VERDICT: PASS. A logic-only recheck may reuse unchanged, actually inspected visual evidence. No screenshots are needed for architecture-only work." : "",
       "End with exactly VERDICT: PASS or VERDICT: CHANGES_REQUIRED on its own last line. PASS means no unresolved material findings; if evidence is incomplete, use CHANGES_REQUIRED.",
     ].filter(Boolean).join("\n");
     // Select the variant at the actual subagent invocation. Keep the same read-only

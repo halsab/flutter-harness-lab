@@ -62,7 +62,7 @@
       ]
     },
     "reviewer": {
-      "description": "Perform ONE independent read-only review of the entire task diff and new task files. Use separate allowed Git commands (status, merge-base, diff) without shell chaining or substitution; use read for files. If full diff cannot be inspected, report OPEN, not PASSED. Findings need file, failure scenario, impact and evidence; no edits or repeated full reviews. For material UX changes inspect supplied actual rendered screenshots against the chosen design and behavior contract; report concrete visual or interaction defects. Static concepts are not runtime evidence.",
+      "description": "Perform ONE independent read-only review of the entire task diff and new task files. Use separate allowed Git commands (status, merge-base, diff) without shell chaining or substitution; use read for files. If full diff cannot be inspected, report OPEN, not PASSED. Findings need file, failure scenario, impact and evidence; no edits or repeated full reviews. For material UX changes actually open populated runtime screenshots and compare to the original job, baseline and visual acceptance plan; challenge unchanged dominant controls and superficial redesigns. Give VISUAL: PASS immediately before VERDICT: PASS only if visual acceptance is supported. Otherwise report CHANGES_REQUIRED. Static concepts are not runtime evidence.",
       "mode": "subagent",
       "model": "openai/gpt-6-luna#medium",
       "permissions": [
