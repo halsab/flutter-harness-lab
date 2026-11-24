@@ -51,6 +51,23 @@ A failed required check or unresolved material risk does require Draft.
 Hosted GitHub CI validates Flutter formatting, analyzer, tests and basic
 config/scripts; it does not prove mobile or Web E2E execution.
 
+## Architecture and pre-PR review
+
+For a growing app `lib/main.dart` is a bootstrap, not the permanent home
+for all feature screens and list transformations. Prefer
+`lib/features/tasks/task_list_screen.dart` and a small pure view-state
+transformation alongside the existing task repository/model, without introducing
+state-management packages solely to organize code. The currently oversized
+task screen should be extracted in a separate focused refactor after the
+in-flight sorting PR is merged.
+
+Before the usual single standard Flutter check, the build agent must inspect
+the complete task diff and map material new behavior to a focused unit/widget
+test. Existing green tests do not prove a new sorting rule. For interactions
+between multiple features, e.g. search+filter+sort, invoke at most one bounded
+independent read-only review BEFORE submitting the PR; trivial isolated changes
+do not need it. This is not a mandate for multiple tests or Android/iOS/Web E2E.
+
 ## Why the policy changed
 
 In task-filter PR #8, a new active task was successfully saved on Android but
