@@ -130,3 +130,19 @@ opencode.jsonc and skill/AGENTS files. Harness policy updates must be
 explicitly synced to this Lab via a configuration-only PR. Lab main must
 remain the untouched SDK starter. For installation and model-routing details,
 see upstream README and docs/verification-policy.md.
+
+## Product foundation adoption
+
+The reusable Harness now supplies an Adaptive/Universal starter, product UX
+standard and architecture/design-system convention checks. See
+`.flutter-harness/PRODUCT.md` and `.flutter-harness/product.json`.
+Status is deliberately pending until the agent migrates the existing app.
+The next focused PR must adopt feature-first MVVM, platform-neutral feature
+screens, shared design tokens/components, native iOS Cupertino and Material
+on Android/Flutter Web, preserve current behavior/data, activate the product
+config, and pass standard checks, reviewer and actual visual acceptance.
+Run `python3 .flutter-harness/bin/init-product.py .` to copy missing starter
+files; it never overwrites existing files or installs dependencies. Adjust the
+SDK-compatible dependencies and app composition explicitly. The Lab sync PR
+changes tooling only; CI permits pending only on config-only adoption, not on
+application changes or after activation.

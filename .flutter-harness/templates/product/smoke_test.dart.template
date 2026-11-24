@@ -1,0 +1,64 @@
+import 'package:cupertino_ui/cupertino_ui.dart' as c;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart' as m;
+import 'package:harness_product_smoke/design_system/design_system.dart';
+
+void main() {
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    testWidgets('adaptive controls and confirmation on $platform', (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      bool? result;
+      await tester.pumpWidget(
+        AppRoot(
+          title: 'Harness',
+          home: AppPage(
+            title: 'Tasks',
+            child: Builder(
+              builder: (context) => Column(
+                children: [
+                  const AppTextField(label: 'Task'),
+                  AppButton(
+                    label: 'Confirm',
+                    onPressed: () async {
+                      result = await confirmAction(
+                        context,
+                        title: 'Delete?',
+                        message: 'Confirm deletion',
+                        cancelLabel: 'Cancel',
+                        confirmLabel: 'Delete',
+                        destructive: true,
+                      );
+                    },
+                  ),
+                  AppSwitch(value: false, onChanged: (_) {}),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(platform == TargetPlatform.iOS ? c.CupertinoTextField : m.TextField), findsOneWidget);
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(result, false);
+      expect(tester.takeException(), isNull);
+    });
+  }
+  testWidgets('universal uses Material on iOS', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(const AppRoot(
+      title: 'Harness',
+      profile: AppUiProfile.universal,
+      home: AppPage(title: 'Tasks', child: AppTextField(label: 'Task')),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byType(m.TextField), findsOneWidget);
+  });
+}

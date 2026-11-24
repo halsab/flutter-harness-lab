@@ -102,6 +102,10 @@ jobs:
           node --check .opencode/plugins/delivery-guard/guard.mjs
           test -f .opencode/plugins/delivery-guard/quality.mjs
           node --check .opencode/plugins/delivery-guard/quality.mjs
+      - name: Check product architecture and design-system conventions
+        env:
+          PRODUCT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 .flutter-harness/bin/check-product.py . --base "$PRODUCT_BASE"
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze

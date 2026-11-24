@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const exec = promisify(execFile);
-const scope = ["lib", "test", "integration_test", "pubspec.yaml", "pubspec.lock"];
+const scope = ["lib", "test", "integration_test", "pubspec.yaml", "pubspec.lock", ".flutter-harness/product.json", "analysis_options.yaml"];
 async function git(root, args) {
   return (await exec("git", args, { cwd: root, encoding: "utf8", timeout: 12000, maxBuffer: 4 * 1024 * 1024 })).stdout;
 }
@@ -27,6 +27,10 @@ export function classify(paths, request = "", removed = [], diff = "") {
       (/(?:bulk\s+delet|delete\s+all|clear\s+all|mass\s+delet|удал\p{L}*\s+(?:все|всех|всё)|массов\p{L}*\s+удал)/iu.test(request) ||
       /(?:\bdelete(?:All|Completed|Many|Bulk)\w*\s*\(|\b(?:clear|remove)All\w*\s*\(|\bDROP\s+TABLE\b)/i.test(diff))) {
     reasons.push("destructive or bulk operation");
+  }
+  if (paths.some(p => p.startsWith("lib/design_system/") || p.startsWith("lib/app/")) ||
+      (paths.some(p => p.startsWith("lib/")) && /(?:redesign|design.system|ui\s*\/\s*ux|редизайн|дизайн.систем|адаптивн\p{L}*\s+(?:дизайн|интерфейс))/iu.test(request))) {
+    reasons.push("product architecture or material UI/design-system change");
   }
   if (removed.length) reasons.push("tests disappeared after a failed check: " + removed.join("; "));
   return reasons;
@@ -72,7 +76,7 @@ export async function candidate(root, base, request, failedNames = []) {
     ...split(await git(root, ["diff", "--no-renames", "--name-only", "-z", mergeBase, "--", ...scope])),
     ...untracked,
   ]);
-  const measured = changed.filter(p => p !== "pubspec.lock");
+  const measured = changed.filter(p => /^(?:lib\/|test\/|integration_test\/|pubspec\.yaml$)/.test(p));
   const measuredSet = new Set(measured);
   let lines = 0;
   const stats = split(await git(root, ["diff", "--no-renames", "--numstat", "-z", mergeBase, "--", ...scope]));
@@ -104,9 +108,12 @@ export async function candidate(root, base, request, failedNames = []) {
   const diff = await git(root, ["diff", "--unified=0", mergeBase, "--", "lib"]);
   const additions = diff.split("\n").filter(line => line.startsWith("+") && !line.startsWith("+++")).join("\n");
   const reasons = classify(changed, request, removed, additions);
+  let product = false;
+  try { await readFile(join(root, ".flutter-harness/product.json")); product = true; }
+  catch (err) { if (err.code !== "ENOENT") throw err; }
   const effort = reviewEffort(size, reasons);
   if (effort === "xhigh") reasons.push("large change requires independent review");
-  return { digest: hash.digest("hex"), paths: changed, names, removed, reasons, size, effort };
+  return { digest: hash.digest("hex"), paths: changed, names, removed, reasons, size, effort, product };
 }
 
 // All evidence comes from tool hooks and the child session, not a build-agent
@@ -152,7 +159,7 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
     const v = await view(id);
     if (!v) return;
     if (checking) {
-      await ctx.storage.set(pending(id, event.id), { kind: "check", digest: v.change.digest, names: v.change.names });
+      await ctx.storage.set(pending(id, event.id), { kind: "check", digest: v.change.digest, names: v.change.names, product: v.change.product });
       return;
     }
     // The normal reviewer is used, retaining its configured read-only permissions.
@@ -162,7 +169,8 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
       "Original requirement: " + (v.task.request || "(see task prompt)"),
       "Risk flags: " + (v.change.reasons.join("; ") || "requested review"),
       v.change.removed.length ? "Tests removed after a failed run: " + v.change.removed.join("; ") : "",
-      "For rejected persistence writes, verify the real repository against a seeded storage double that rejects only the write, not a replacement empty store. Assert reload and preserved records. Reject unsupported claims, missing important assertions, and removed failing tests without a valid replacement.",
+      v.change.reasons.some(r => /persistent data|destructive|tests disappeared/.test(r)) ? "For rejected persistence writes, verify the real repository against a seeded storage double that rejects only the write, not a replacement empty store. Assert reload and preserved records. Reject unsupported claims, missing important assertions, and removed failing tests without a valid replacement." : "Reject unsupported claims and missing important assertions.",
+      v.change.reasons.some(r => r.includes("material UI")) ? "Apply .flutter-harness/PRODUCT.md: verify architecture, design-system reuse, visual hierarchy, accessibility and actual rendered evidence for material UI changes. If required visual evidence is missing or cannot be inspected, report CHANGES_REQUIRED; do not claim visual PASS from source alone. Architecture-only changes do not need screenshots." : "",
       "End with exactly VERDICT: PASS or VERDICT: CHANGES_REQUIRED on its own last line. PASS means no unresolved material findings; if evidence is incomplete, use CHANGES_REQUIRED.",
     ].filter(Boolean).join("\n");
     // Select the variant at the actual subagent invocation. Keep the same read-only
@@ -185,7 +193,7 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
     if (call.kind === "check") {
       const output = textOf(event.result?.content);
       const exit = event.result?.metadata?.exit;
-      if (exit === 0 && /PASS format/.test(output) && /PASS analyze/.test(output) && /PASS flutter-tests/.test(output)) {
+      if (exit === 0 && /PASS format/.test(output) && /PASS analyze/.test(output) && /PASS flutter-tests/.test(output) && (!call.product || /PASS product/.test(output))) {
         await ctx.storage.set(key(id), { ...state, passedDigest: call.digest });
       } else if (/FAIL flutter-tests/.test(output)) {
         await ctx.storage.set(key(id), { ...state, passedDigest: null, failedNames: unique([...(state.failedNames || []), ...call.names]) });
