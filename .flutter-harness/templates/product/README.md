@@ -1,24 +1,22 @@
-Reusable, deliberately small Adaptive/Universal Flutter design system starter.
-Run init-product.py on the target project; it copies only missing files into
-lib/design_system and a minimal app/bootstrap skeleton (existing main.dart is
-preserved; replace the SDK entrypoint explicitly when adopting). For Flutter 3.50 use official material_ui and cupertino_ui
-(verify versions against the project's SDK, e.g. material_ui ^1.1.0 and
-cupertino_ui ^1.1.7). Add only missing dependencies with flutter pub add.
-Wire AppRoot in lib/app/app.dart; select AppUiProfile.adaptive or universal.
-For Russian or other locales pass the locale, supportedLocales and localization
-delegates from the SDK and project l10n; install flutter_localizations as an
-SDK dependency if needed. AppPage is a top-aligned shell; supply scrollable
-content and appropriate layout per screen. AppButton, AppTextField, AppSwitch,
-AppProgress, AppStateMessage, semantic AppColors/AppTextStyles and confirmAction are a starting set, not a full design library.
-Extend centrally for menus, lists, search, empty/error, focus and responsive
-patterns only when used. Use native platform text/theme colors from the
-design-system layer; no feature-specific style literals. Keep one shared
-business behavior. Minimal/Custom are optional project-specific implementations;
-do not claim they are prebuilt. No source replacement or pub get at install.
+Reusable, deliberately small Material 3 design-system starter for Android,
+iOS and Flutter Web. Run init-product.py on the target project; it copies
+only missing files into lib/design_system and the app/bootstrap skeleton.
+Existing main.dart is preserved; wire it explicitly when adopting.
 
-Default appearance: Material 3 derives light/dark ColorSchemes from the
-Ocean Blue seed (#2563EB); Cupertino uses systemBlue and dynamic system
-roles. Both follow system brightness. Change the seed or platform theme
-centrally only for explicit product branding. No custom HEX palette or
-in-app theme picker is required by default. Starter smoke tests switch
-system brightness in a live widget tree on both platforms.
+For Flutter 3.50 use the project's SDK-compatible material_ui package
+(e.g. ^1.1.0); add it only when missing. No cupertino_ui dependency is
+required. Wire AppRoot in lib/app/app.dart. Pass locale, supportedLocales
+and localization delegates from the SDK/project l10n if needed.
+AppPage is a top-aligned shell; use scrollable content and appropriate
+layout per screen. Use stock Material controls directly in presentation
+and reuse semantic AppColors/AppTextStyles, tokens and shared patterns.
+Existing starter helper APIs are convenience widgets, not required
+wrappers for every control. Extend only when there is an actual need.
+
+Material 3 derives light/dark ColorSchemes from Ocean Blue (#2563EB).
+System brightness and platform interaction behavior remain in effect.
+Change branding centrally only on request. Starter smoke tests exercise
+Material and system appearance on both Android and iOS target platforms.
+New product.json uses universal; explicit custom styling is Material-based.
+Legacy adaptive/minimal projects require a separate reviewed migration.
+The installer preserves existing project source, policies and config.

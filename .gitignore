@@ -52,3 +52,4 @@ app.*.map.json
 /.flutter-harness/verification.json
 
 /.flutter-harness/previews/
+/.flutter-harness/work/

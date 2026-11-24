@@ -1,8 +1,6 @@
-import 'package:cupertino_ui/cupertino_ui.dart' as c;
 import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' as m;
 
-import 'app_root.dart';
 import 'tokens.dart';
 import 'theme.dart';
 
@@ -28,21 +26,10 @@ class AppPage extends StatelessWidget {
         ),
       ),
     );
-    return usesCupertino(context)
-        ? c.CupertinoPageScaffold(
-            navigationBar: c.CupertinoNavigationBar(
-              middle: Text(title),
-              trailing: trailing,
-            ),
-            child: body,
-          )
-        : m.Scaffold(
-            appBar: m.AppBar(
-              title: Text(title),
-              actions: [?trailing],
-            ),
-            body: body,
-          );
+    return m.Scaffold(
+      appBar: m.AppBar(title: Text(title), actions: [?trailing]),
+      body: body,
+    );
   }
 }
 
@@ -59,11 +46,6 @@ class AppButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (usesCupertino(context)) {
-      return primary
-          ? c.CupertinoButton.filled(onPressed: onPressed, child: Text(label))
-          : c.CupertinoButton(onPressed: onPressed, child: Text(label));
-    }
     return primary
         ? m.FilledButton(onPressed: onPressed, child: Text(label))
         : m.TextButton(onPressed: onPressed, child: Text(label));
@@ -86,24 +68,13 @@ class AppTextField extends StatelessWidget {
   final bool enabled;
 
   @override
-  Widget build(BuildContext context) => usesCupertino(context)
-      ? Semantics(
-          label: label,
-          child: c.CupertinoTextField(
-            placeholder: label,
-            controller: controller,
-            onChanged: onChanged,
-            onSubmitted: onSubmitted,
-            enabled: enabled,
-          ),
-        )
-      : m.TextField(
-          controller: controller,
-          onChanged: onChanged,
-          onSubmitted: onSubmitted,
-          enabled: enabled,
-          decoration: m.InputDecoration(labelText: label),
-        );
+  Widget build(BuildContext context) => m.TextField(
+    controller: controller,
+    onChanged: onChanged,
+    onSubmitted: onSubmitted,
+    enabled: enabled,
+    decoration: m.InputDecoration(labelText: label),
+  );
 }
 
 class AppSwitch extends StatelessWidget {
@@ -112,18 +83,15 @@ class AppSwitch extends StatelessWidget {
   final ValueChanged<bool>? onChanged;
 
   @override
-  Widget build(BuildContext context) => usesCupertino(context)
-      ? c.CupertinoSwitch(value: value, onChanged: onChanged)
-      : m.Switch(value: value, onChanged: onChanged);
+  Widget build(BuildContext context) =>
+      m.Switch(value: value, onChanged: onChanged);
 }
 
 class AppProgress extends StatelessWidget {
   const AppProgress({super.key});
 
   @override
-  Widget build(BuildContext context) => usesCupertino(context)
-      ? const c.CupertinoActivityIndicator()
-      : const m.CircularProgressIndicator();
+  Widget build(BuildContext context) => const m.CircularProgressIndicator();
 }
 
 Future<bool> confirmAction(
@@ -134,27 +102,6 @@ Future<bool> confirmAction(
   required String confirmLabel,
   bool destructive = false,
 }) async {
-  if (usesCupertino(context)) {
-    return await c.showCupertinoDialog<bool>(
-          context: context,
-          builder: (context) => c.CupertinoAlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              c.CupertinoDialogAction(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text(cancelLabel),
-              ),
-              c.CupertinoDialogAction(
-                isDestructiveAction: destructive,
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text(confirmLabel),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
   return await m.showDialog<bool>(
         context: context,
         builder: (context) => m.AlertDialog(

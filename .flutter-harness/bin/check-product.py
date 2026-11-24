@@ -24,6 +24,7 @@ DEPENDENCIES = {
     "widgets": {"models", "view_models", "screens", "widgets"},
 }
 DESIGN_IMPORT = re.compile(r"^package:(?:material_ui/|cupertino_ui/|flutter/(?:material|cupertino)\.dart$|shadcn_ui/|shadcn_flutter/|shad/)")
+MATERIAL_IMPORT = re.compile(r"^package:(?:material_ui/|flutter/material\.dart$)")
 WIDGET_IMPORT = re.compile(r"^package:flutter/(?:widgets|rendering|painting|gestures|services)\.dart$")
 DATA_IMPORT = re.compile(r"^package:(?:shared_preferences(?:_platform_interface)?|dio|http|drift|sqflite|flutter_secure_storage|hive|isar)(?:/|_)")
 STYLE_LITERAL = re.compile(r"\b(?:Color\s*\(\s*0x[0-9a-fA-F]+|(?:Colors|CupertinoColors)\s*\.|BorderRadius\s*\.\s*circular\s*\(\s*\d|EdgeInsets\s*\.\s*(?:all|symmetric|only|fromLTRB)\s*\([^)]*?(?:\b(?:left|right|top|bottom|horizontal|vertical)\s*:\s*)?\b[1-9]\d*(?:\.\d+)?\b|TextStyle\s*\([^)]*?\bfontSize\s*:\s*\d)", re.S)
@@ -42,7 +43,7 @@ def feature_info(path):
     p = PurePosixPath(path).parts
     return (p[1], p[2]) if len(p) >= 4 and p[0] == "features" else (None, None)
 
-def inspect(root):
+def inspect(root, ui_profile):
     errors = []
     lib = root / "lib"
     pubspec = (root / "pubspec.yaml").read_text(encoding="utf-8")
@@ -75,8 +76,14 @@ def inspect(root):
                 target_feature, target_layer = feature_info(target or "")
                 if path == "main.dart" and target != "app/bootstrap.dart":
                     errors.append(f"lib/{path}: import only app/bootstrap.dart ({uri})")
-                if top != "design_system" and DESIGN_IMPORT.search(uri):
-                    errors.append(f"lib/{path}: use design_system instead of platform UI library ({uri})")
+                if DESIGN_IMPORT.search(uri):
+                    material = bool(MATERIAL_IMPORT.search(uri))
+                    direct_material = (ui_profile in {"universal", "custom"} and material
+                                       and (top == "app" or layer in PRESENTATION))
+                    if ui_profile == "universal" and not material:
+                        errors.append(f"lib/{path}: universal uses Material only; remove alternate visual UI import ({uri})")
+                    elif top != "design_system" and not direct_material:
+                        errors.append(f"lib/{path}: use design_system instead of platform UI library ({uri})")
                 if feature and layer not in PRESENTATION and (WIDGET_IMPORT.search(uri) or DESIGN_IMPORT.search(uri)):
                     errors.append(f"lib/{path}: non-view layer must not import UI ({uri})")
                 if feature and layer in PRESENTATION and DATA_IMPORT.search(uri):
@@ -125,7 +132,7 @@ def verify(root, base=None):
         return [] if pending_allowed(root, base) else ["product foundation pending; migrate and activate before application delivery"]
     if settings.get("status") != "active":
         return ["invalid product status"]
-    return inspect(root)
+    return inspect(root, settings["ui_profile"])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)

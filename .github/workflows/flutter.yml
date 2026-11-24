@@ -26,59 +26,7 @@ jobs:
           channel: stable
           cache: true
       - name: Validate OpenCode routing and permissions
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          c = json.loads(Path('opencode.jsonc').read_text(encoding='utf-8'))
-          assert c['model'] == 'openai/gpt-6-luna'
-          assert c['default_agent'] == 'build'
-          expected = {
-              'build': 'openai/gpt-6-luna#medium',
-              'plan': 'openai/gpt-6.2-sol#medium',
-              'architect': 'openai/gpt-6.2-sol#medium',
-              'reviewer': 'openai/gpt-6-luna#medium',
-              'general': 'openai/gpt-6-luna#medium',
-              'explore': 'openai/gpt-6-luna#low',
-              'compaction': 'openai/gpt-6-luna#low',
-              'title': 'openai/gpt-6-luna#low',
-              'summary': 'openai/gpt-6-luna#low',
-          }
-          for agent, model in expected.items():
-              assert c['agents'][agent]['model'] == model, agent
-          for model, effort in [('gpt-6.2-sol','medium'), ('gpt-6-luna','medium')]:
-              assert c['providers']['openai']['models'][model]['settings']['reasoningEffort'] == effort
-          rules = {(r['action'],r['resource'],r['effect']) for r in c['permissions']}
-          assert {('external_directory','*','ask'), ('shell','git push *','ask'), ('shell','gh pr merge *','deny'), ('shell','git push --force*','deny')} <= rules
-          for agent in ('architect','reviewer'):
-              a = c['agents'][agent]
-              rules = {(r['action'],r['resource'],r['effect']) for r in a['permissions']}
-              assert a['mode'] == 'subagent'
-              assert {('edit','*','deny'), ('shell','*','deny'), ('shell','git merge-base *','allow')} <= rules
-              allowed_shell = {rule for rule in rules if rule[0] == 'shell' and rule[2] == 'allow'}
-              assert allowed_shell <= {
-                  ('shell','git status *','allow'),
-                  ('shell','git diff *','allow'),
-                  ('shell','git merge-base *','allow'),
-                  ('shell','git show *','allow'),
-                  ('shell','git log *','allow'),
-              }
-          assert 'OPEN' in c['agents']['reviewer']['description']
-          assert set(c['mcp']['servers']) == {'dart','maestro','playwright','chrome-devtools'}
-          assert c['plugins'] == [
-              '-superpowers', '-superpowers.*',
-              '-superpowers@git+https://github.com/obra/superpowers.git#v7.0.2',
-          ]
-          assert c['mcp']['servers']['chrome-devtools']['disabled'] is True
-          assert c['mcp']['servers']['maestro']['command'] == ['bash', '.flutter-harness/bin/maestro.sh', 'mcp']
-          assert c['mcp']['servers']['maestro']['cwd'] == '.'
-          blocked_skills = {'brainstorming', 'writing-plans', 'executing-plans',
-                            'subagent-driven-development', 'using-git-worktrees',
-                            'finishing-a-development-branch'}
-          permissions = {(x['action'],x['resource'],x['effect']) for x in c['permissions']}
-          assert {('skill', name, 'deny') for name in blocked_skills} <= permissions
-          print('PASS lab OpenCode config and safeguards')
-          PY
+        run: python3 .flutter-harness/bin/validate-opencode.py opencode.jsonc mobile-web
       - name: Check installed Harness scripts
         run: |
           for script in .flutter-harness/bin/maestro.sh .flutter-harness/bin/check.sh .flutter-harness/bin/verify-pr.sh; do
@@ -89,7 +37,7 @@ jobs:
           python3 - <<'PY'
           import ast
           from pathlib import Path
-          for name in ('web-preview.py', 'verify-e2e.py'):
+          for name in ('web-preview.py', 'verify-e2e.py', 'task-plan.py', 'session-usage.py', 'validate-opencode.py'):
               source = Path('.flutter-harness/bin', name)
               ast.parse(source.read_text(encoding='utf-8'), filename=str(source))
           print('PASS local E2E helper syntax')
@@ -102,6 +50,10 @@ jobs:
           node --check .opencode/plugins/delivery-guard/guard.mjs
           test -f .opencode/plugins/delivery-guard/quality.mjs
           node --check .opencode/plugins/delivery-guard/quality.mjs
+          node --check .opencode/plugins/delivery-guard/resources.mjs
+          test -f .flutter-harness/templates/product/BEHAVIOR.md
+          test -f .flutter-harness/templates/product/DESIGN.md
+          test -f .flutter-harness/templates/product/ORCHESTRATION.md
       - name: Check product architecture and design-system conventions
         env:
           PRODUCT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

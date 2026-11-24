@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const exec = promisify(execFile);
-const scope = ["lib", "test", "integration_test", "pubspec.yaml", "pubspec.lock", ".flutter-harness/product.json", "analysis_options.yaml"];
+const scope = ["lib", "test", "integration_test", "pubspec.yaml", "pubspec.lock", ".flutter-harness/product.json", "analysis_options.yaml", "docs/product"];
 async function git(root, args) {
   return (await exec("git", args, { cwd: root, encoding: "utf8", timeout: 12000, maxBuffer: 4 * 1024 * 1024 })).stdout;
 }
@@ -37,7 +37,6 @@ export function classify(paths, request = "", removed = [], diff = "") {
 }
 // Count additions and deletions in source/tests, excluding generated lockfiles.
 export function reviewEffort({ files, lines }, reasons = []) {
-  if (lines > 400 || files > 8) return "xhigh";
   if (lines > 100 || files > 3 || reasons.length) return "high";
   return "medium";
 }
@@ -61,6 +60,9 @@ export function finalVerdict(messages) {
   return /(?:^|\n)VERDICT: PASS\s*$/.test(textOf(final?.content));
 }
 export function gateReason(candidate, state, reviewPassed) {
+  if (state.lastCheckFailed && state.passedDigest !== candidate.digest) {
+    return "The previous standard check failed or lacked required evidence. Fix the cause and run the standard check on the exact current candidate.";
+  }
   if (!candidate.reasons.length) return "";
   if (state.passedDigest !== candidate.digest) {
     return "Run the standard check on the exact current source and tests; the previous result is absent or stale.";
@@ -112,7 +114,7 @@ export async function candidate(root, base, request, failedNames = []) {
   try { await readFile(join(root, ".flutter-harness/product.json")); product = true; }
   catch (err) { if (err.code !== "ENOENT") throw err; }
   const effort = reviewEffort(size, reasons);
-  if (effort === "xhigh") reasons.push("large change requires independent review");
+  if (size.lines > 400 || size.files > 8) reasons.push("large change requires independent review");
   return { digest: hash.digest("hex"), paths: changed, names, removed, reasons, size, effort, product };
 }
 
@@ -136,20 +138,24 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
     if (!matchingReviewModel(child.model, change.effort)) return false;
     return finalVerdict(await ctx.session.context({ sessionID: state.review.childID }));
   }
-  async function reason(id) {
+  async function status(id) {
     const v = await view(id);
-    if (!v || !v.change.reasons.length) return "";
-    const approvedReview = v.state.passedDigest === v.change.digest &&
+    if (!v) return { issue: "", phase: "work", digest: "", check: "unknown" };
+    const checked = v.state.passedDigest === v.change.digest;
+    const check = checked ? "passed" : v.state.lastCheckFailed ? "failed" : "missing";
+    const approvedReview = checked && v.change.reasons.length > 0 &&
       await approved(id, v.state, v.change);
     const why = gateReason(v.change, v.state, approvedReview);
-    if (!why) return "";
-    return "Risk gate: " + v.change.reasons.join("; ") + ". " + why +
+    if (!why) return { issue: "", phase: "work", digest: v.change.digest, check };
+    const phase = !checked ? "check" : "review";
+    const prefix = v.change.reasons.length ? "Risk gate: " + v.change.reasons.join("; ") + ". " : "";
+    const review = v.change.reasons.length ?
       " Reviewer route: Luna #" + v.change.effort + " (" + v.change.size.files +
-      " files, " + v.change.size.lines + " changed lines). " +
-      " Do not drop a failing acceptance test; fix its setup or implementation. " +
-      "Use the read-only reviewer subagent after successful checks; wait for its result. " +
-      "At most one targeted re-review after fixes. Do not bypass this gate.";
+      " files, " + v.change.size.lines + " changed lines). Use the read-only reviewer after successful checks; wait for its result. At most one targeted re-review." : "";
+    return { issue: prefix + why + review +
+      " Do not drop a failing acceptance test or bypass the gate.", phase, digest: v.change.digest, check };
   }
+  async function reason(id) { return (await status(id)).issue; }
 
   await ctx.tool.hook("execute.before", async (event) => {
     const id = event.sessionID;
@@ -167,10 +173,11 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
     const extra = [
       "Independently inspect the complete task diff (including uncommitted/new files) and the relevant source and tests.",
       "Original requirement: " + (v.task.request || "(see task prompt)"),
+      "Check the behavior contract in docs/product when applicable against the original request, including interacting state and acceptance examples. A green test of an incorrect rule is not acceptance.",
       "Risk flags: " + (v.change.reasons.join("; ") || "requested review"),
       v.change.removed.length ? "Tests removed after a failed run: " + v.change.removed.join("; ") : "",
       v.change.reasons.some(r => /persistent data|destructive|tests disappeared/.test(r)) ? "For rejected persistence writes, verify the real repository against a seeded storage double that rejects only the write, not a replacement empty store. Assert reload and preserved records. Reject unsupported claims, missing important assertions, and removed failing tests without a valid replacement." : "Reject unsupported claims and missing important assertions.",
-      v.change.reasons.some(r => r.includes("material UI")) ? "Apply .flutter-harness/PRODUCT.md: verify architecture, design-system reuse, visual hierarchy, accessibility and actual rendered evidence for material UI changes. If required visual evidence is missing or cannot be inspected, report CHANGES_REQUIRED; do not claim visual PASS from source alone. Architecture-only changes do not need screenshots." : "",
+      v.change.reasons.some(r => r.includes("material UI")) ? "Apply .flutter-harness/PRODUCT.md and templates/product/DESIGN.md under .flutter-harness: compare actual rendered evidence to the selected visual direction and behavior contract. Check hierarchy, craft, discoverability, scope and interaction defects, accessibility and design-system reuse. If required visual evidence is missing or cannot be inspected, report CHANGES_REQUIRED; do not claim visual PASS from source alone. Architecture-only changes do not need screenshots." : "",
       "End with exactly VERDICT: PASS or VERDICT: CHANGES_REQUIRED on its own last line. PASS means no unresolved material findings; if evidence is incomplete, use CHANGES_REQUIRED.",
     ].filter(Boolean).join("\n");
     // Select the variant at the actual subagent invocation. Keep the same read-only
@@ -194,11 +201,11 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
       const output = textOf(event.result?.content);
       const exit = event.result?.metadata?.exit;
       if (exit === 0 && /PASS format/.test(output) && /PASS analyze/.test(output) && /PASS flutter-tests/.test(output) && (!call.product || /PASS product/.test(output))) {
-        await ctx.storage.set(key(id), { ...state, passedDigest: call.digest });
+        await ctx.storage.set(key(id), { ...state, passedDigest: call.digest, lastCheckFailed: false });
       } else if (/FAIL flutter-tests/.test(output)) {
-        await ctx.storage.set(key(id), { ...state, passedDigest: null, failedNames: unique([...(state.failedNames || []), ...call.names]) });
+        await ctx.storage.set(key(id), { ...state, passedDigest: null, lastCheckFailed: true, failedNames: unique([...(state.failedNames || []), ...call.names]) });
       } else {
-        await ctx.storage.set(key(id), { ...state, passedDigest: null });
+        await ctx.storage.set(key(id), { ...state, passedDigest: null, lastCheckFailed: true });
       }
     } else {
       const childID = event.result?.output?.sessionID || event.result?.metadata?.sessionID;
@@ -218,5 +225,5 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
       event.message = why;
     }
   });
-  return { reason, clear: (id) => ctx.storage.remove(key(id)) };
+  return { reason, status, clear: (id) => ctx.storage.remove(key(id)) };
 }
