@@ -40,6 +40,13 @@ if [[ "$failed" -ne 0 ]]; then
   printf 'Log: %s\nResults: %s\n' "$LOG" "$RESULT"
   exit 1
 fi
+if [[ -f "$PROJECT/.flutter-harness/product.json" ]]; then
+  check product python3 .flutter-harness/bin/check-product.py .
+  if [[ "$failed" -ne 0 ]]; then
+    printf 'Log: %s\nResults: %s\n' "$LOG" "$RESULT"
+    exit 1
+  fi
+fi
 check analyze flutter analyze
 if [[ "$LEVEL" != "quick" ]]; then
   check flutter-tests flutter test
