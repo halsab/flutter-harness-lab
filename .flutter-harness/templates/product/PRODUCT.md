@@ -34,6 +34,18 @@ choice; document genuine architectural exceptions rather than bypass checks.
 - Independent features must not import each other's internals. Compose them
   in app, or extract a shared contract/model to core if warranted.
 
+## Product behavior before visual design
+
+For material new/changed behavior use the behavior contract guide
+(BEHAVIOR.md in the reusable product template, installed at
+.flutter-harness/templates/product/BEHAVIOR.md). Resolve intent, state,
+combinations with existing features, failure paths and observable acceptance
+examples before code or visual concepts. Update one existing feature spec or
+docs/product/<feature>.md when warranted; no new document for trivial work.
+Independent controls remain independent unless the user job justifies an
+explicit dependency. Check the rules against the original request, not just
+implementation/test agreement. No extra approval or premium model by default.
+
 ## UX — design the flow, not a pile of controls
 
 For a new screen or meaningful UX change, privately identify primary user
@@ -50,66 +62,68 @@ safe areas and let the content scroll naturally.
 
 Use actual available width, not device model. Compact <600, medium 600–839,
 expanded >=840 logical px are starting breakpoints. Respect text scaling,
-safe areas, keyboard inset, touch targets (44 iOS / 48 Material logical px),
+safe areas, keyboard inset, touch targets (48 Material logical px),
 contrast, semantics, keyboard/focus/hover for Web, RTL and long translations.
-Use platform-native navigation and controls where it matters, not a second
-feature implementation. A single column is fine for a small app on desktop.
+Use familiar Material navigation and controls with normal platform behavior,
+not a second visual implementation. A single column is fine for a small app on desktop.
 
-## UI profiles and design system
+## One visual foundation: Material 3
 
-Default adaptive: official Material on Android/Web/other platforms; official
-Cupertino on native iOS. Web stays Material even in Safari on iOS. Platform
-widgets simulate platform design in Flutter; they are not actual native UIKit.
-Universal: Material everywhere. Minimal: optional one verified Flutter
-shadcn-style library; no dependency installed until selected and compatibility,
-license, accessibility and SDK are checked. Custom: explicit project
-references/brand or bespoke visual direction, still uses tokens/components.
-Never silently mix visual systems in a screen. Adaptive and Universal have
-a reusable starter; Minimal and Custom are extension contracts, not supplied
-full component kits.
+Use Material 3 on Android, iOS and Flutter Web (ui_profile: universal).
+Do not implement a second Cupertino visual tree, introduce platform-specific
+UI wrappers, or imitate UIKit interactions just because the device is iOS.
+Keep Flutter's normal platform behavior (navigation, text editing, keyboard,
+scroll physics, accessibility) and adapt layout to width and input method.
+Use stock Material controls and interactions first; custom visual direction
+builds on Material and the same design system (ui_profile: custom, when
+explicitly requested). No optional second component kit by default.
+Existing adaptive/minimal profile values are legacy compatibility only; do
+not select them for new projects. Convert existing projects in a separate
+reviewed migration rather than changing their setting behind the user's back.
 
-Use semantic colors, text styles, spacing, radii, layout widths, motion and
-themes from design_system, with light/dark theme and system font defaults.
-Default color policy: follow system light/dark appearance on all platforms
-(including Flutter Web); no separate theme-settings screen unless requested.
+One semantic light/dark theme follows system appearance on every platform.
 Material 3 generates both ColorSchemes from Ocean Blue (#2563EB), a seed,
-not a fixed foreground, button or background color. Native iOS Cupertino
-uses CupertinoColors.systemBlue as its dynamic accent and platform semantic
-colors for background, surfaces, label, secondary label, errors and separators.
-Do not feed the Material seed into Cupertino. Resolve dynamic colors with
-the active BuildContext. Use AppColors and AppTextStyles in feature code;
-never freeze resolved colors in static fields or replace them with hand-picked
-light/dark HEX tables. Keep native contrast pairs and component states.
-No palette-selection question for routine new projects. Explicit brand or
-visual requirements can override the seed or platform theme centrally in
-design_system; preserve light/dark behavior. Cover system theme changes on
-both platform implementations in shared starter widget tests.
-Reuse existing controls/patterns before inventing new ones. Feature-specific
-widgets stay in feature, repeated generic patterns belong in design_system.
-Use neutral Flutter layout widgets directly; wrap a control only for real
-consistency or platform abstraction, not every SDK widget. Do not hard-code
-palette/typography/spacing or import platform-specific design libraries in
-feature screens. Keep one implementation of the feature behavior.
-The official Material/Cupertino packages for the pinned SDK are the first
-choice. Check project SDK and pubspec before changing dependencies.
+not a literal foreground, button or background color. Resolve theme roles
+with the active BuildContext; don't freeze resolved colors or hand-build
+parallel palettes. Explicit branding may change the seed/theme centrally.
+No theme picker or palette question by default.
+
+Use stock Material widgets directly in app/presentation with shared theme
+and tokens. Keep palette, spacing, typography, radii and genuinely reusable
+patterns in design_system. Feature-specific UI stays in its feature. Do not
+wrap each SDK widget merely to hide its import, or add platform switches.
+No direct UI imports in domain/data/ViewModels; no storage access in views.
+Use the Material package compatible with the pinned SDK and existing project.
+No new UI library dependency merely for styling. Preserve keyboard/focus,
+safe areas, responsive layout, semantics, and large-text support.
+
+## Visual design before implementation
+
+For a substantial new screen, flow or redesign follow the compact DESIGN.md
+guide in .flutter-harness/templates/product/. Define the behavior first;
+choose a visual direction using relevant actual reference images and Material
+patterns before delegating or coding UI. Keep the selected direction and
+interaction notes in the task handoff. No mandatory mockup for ordinary UI
+changes, no separate design-review agent, no premium model for visual design.
 
 ## Visual acceptance and review
 
 For a material new screen, redesign, major navigation/flow or design-system
 change, inspect actual rendered screenshots of the changed screen(s), with
-representative content and the key changed state. For adaptive initial
-adoption inspect both iOS Cupertino and Android or Flutter Web Material;
-inspect light and dark appearance of both variants at initial adoption.
-For an isolated later change inspect only the affected visual variants and
-themes; for palette or theme changes include both light and dark.
+representative content and the key changed state. For initial Material adoption
+or a shared theme change inspect light and dark on one representative runtime platform. Inspect another platform only for an
+actual platform-specific change or risk; inspect wide layout when affected.
+For isolated changes inspect only affected states and representative widths.
 Check narrow/large layouts and large text using fast widget assertions where
 meaningful, plus a representative desktop width if Web layout changes.
 Use actual local simulator/browser captures, not mockups or Ahem widget-test
 screenshots as proof of polished visual design. Save local previews under
 .flutter-harness/previews/ (ignored); include exact paths/viewport/platform
 in reviewer handoff and PR, attach screenshots when supported.
-Review hierarchy, spacing, discoverability, clipping, theme, states,
-platform conventions and reuse. One read-only reviewer covers correctness,
+Compare the actual rendered result with the selected direction, original
+request and behavior contract. Review hierarchy, spacing, discoverability, clipping, theme, states,
+platform behavior and reuse. Material hierarchy or interaction defects are
+not cosmetic preferences. One read-only reviewer covers correctness,
 architecture and UX, not three separate agents. If runtime visual review is
 unavailable, say BLOCKED for required visual acceptance, do not claim PASS.
 A screenshot is semantic review evidence, not an executable functional test.
@@ -125,6 +139,9 @@ fail until product foundation is activated. On a fresh app or explicit
 migration, copy/adapt the starter and composition-root skeleton with `python3 .flutter-harness/bin/init-product.py .`,
 choose only needed components, move code and tests to the specified structure,
 wire AppRoot and feature ViewModels, and change product.json status to active.
+For an existing app with pending foundation, separate adoption from a broad
+redesign or unrelated feature. An old installed policy is not automatically
+updated by the installer; use a reviewed configuration sync first.
 Do not mark active before actual integration. Pending is permitted in CI only
 for initial configuration-only adoption (no application changes), not a bypass
 after activation. The checker is a lightweight convention/import/token check,
@@ -135,13 +152,26 @@ a justified exception is required.
 
 ## Efficient delivery
 
+For broad or genuinely interacting changes use the installed ORCHESTRATION.md
+guide. One High-effort Luna architect plans across product and implementation
+boundaries; the Medium parent executes or delegates small stable-contract slices
+to Low-effort workers. Do not require a planner or worker for simple changes.
+
 Identify meaningful failure scenarios before editing. For failed targeted
 tests, fix the specific cause rather than rerun the whole suite; after two
-unsuccessful attempts at the same substantive failure, consult Sol architect
-once for a focused diagnosis and implement its recommendation. Ordinary format
-failures do not need escalation. A difficult architectural decision gets one
-Sol consultation before implementation; established baseline choices do not.
-Use one final standard check after implementation/review corrections. If
+unsuccessful attempts at the same substantive failure, isolate the failing
+case and, if useful, consult the Luna High architect once for focused
+diagnosis. Apply the recommendation and check the affected behavior.
+Ordinary format failures do not need escalation. Failed checks are work to
+fix, not an external blocker. If bounded recovery fails, report INCOMPLETE.
+The only standing premium-model exception is one focused Sol Medium advisor
+consultation per original task under ORCHESTRATION.md. No premium build,
+whole-project planning/review or automatic failure-based escalation. Other
+premium use requires explicit user permission.
+Use one final standard check after implementation/review corrections.
+Reuse observed successful checks and review on unchanged source/tests/spec;
+no duplicate full runs solely because the session resumed. Follow the
+resource-aware recovery policy in ORCHESTRATION.md. If
 independent review is required, it may run concurrently with deterministic
 checks on the unchanged candidate. Wait for review result without duplicate
 review requests or unrelated edits. Fix material findings, run affected
