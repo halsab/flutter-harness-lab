@@ -215,6 +215,36 @@ void main() {
     expect(find.text('Не удалось сохранить задачи'), findsOneWidget);
   });
 
+  testWidgets('shows iOS feedback when a task mutation cannot be saved', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final failedRepository = _FailingCompletedDeleteRepository([
+      const TaskItem(
+        id: 'ios-completed',
+        title: 'Keep completed after failed deletion',
+        isCompleted: true,
+      ),
+    ]);
+
+    await tester.pumpWidget(MyApp(repository: failedRepository));
+    await tester.pumpAndSettle();
+
+    await _tapVisible(tester, find.text('Удалить завершённые'));
+    expect(find.byType(CupertinoAlertDialog), findsOneWidget);
+    await _tapVisible(tester, find.text('Удалить'));
+    expect(find.text('Не удалось сохранить задачи'), findsOneWidget);
+    expect(find.byType(CupertinoAlertDialog), findsOneWidget);
+    expect(failedRepository.tasks.single.id, 'ios-completed');
+    expect(
+      failedRepository.tasks.single.title,
+      'Keep completed after failed deletion',
+    );
+    expect(failedRepository.tasks.single.isCompleted, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('searches titles case-insensitively and combines with filters', (
     tester,
   ) async {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_harness_lab/design_system/design_system.dart';
 
 import '../models/task_item.dart';
@@ -40,9 +42,26 @@ class _TaskListScreenState extends State<TaskListScreen> {
     if (!mounted) return;
     if (_shownSaveFailureVersion != _viewModel.saveFailureVersion) {
       _shownSaveFailureVersion = _viewModel.saveFailureVersion;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось сохранить задачи')),
-      );
+      if (usesCupertinoControls) {
+        unawaited(
+          showCupertinoDialog<void>(
+            context: context,
+            builder: (context) => CupertinoAlertDialog(
+              title: const Text('Не удалось сохранить задачи'),
+              actions: [
+                CupertinoDialogAction(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось сохранить задачи')),
+        );
+      }
     }
     setState(() {});
   }
