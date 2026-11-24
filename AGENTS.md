@@ -12,7 +12,8 @@ GPT-6 Luna medium is the default; inspect the active UI variant when relevant.
 Test only meaningful behavior: Dart unit tests for business rules/persistence,
 selective Flutter widget tests for stateful UI such as filtering/forms/errors.
 No tests for trivial styling, labels, framework wiring or artificial coverage.
-One standard check (format/analyze/flutter test) after implementation is normal.
+Format touched Dart files before one standard check (format/analyze/flutter test).
+Never remove a meaningful failing acceptance test to obtain green checks.
 Android/iOS Maestro and Web Playwright are optional risk-based checks, NOT
 required on every task and NOT a condition of a regular PR for routine UI work.
 Use scripted executable assertions for real platform/security/payment/data-loss
@@ -26,7 +27,8 @@ or widget test; passing old tests alone is not enough. For sorting, test
 ascending, descending, default order and state not being persisted. No tests
 for trivial labels or styling. Use one bounded read-only reviewer when a
 change intersects multiple existing features (sort/search/filter), critical
-security/data/concurrency/architecture risk or when explicitly requested.
+security/data/concurrency/architecture risk, persistence mutations, destructive
+operations (including bulk delete), or when explicitly requested.
 No reviewer loops. Keep main.dart limited to app bootstrap and use a feature
 folder for growing UI/transformation logic, without needless dependencies.
 Refactor an existing monolith in focused work separate from an unrelated PR. Report actual checks honestly,
@@ -39,4 +41,8 @@ completion. If a feature is not on a feature branch with a verified open PR
 at local HEAD, it may continue the session up to twice, then reports INCOMPLETE.
 It never commits or pushes itself, and never bypasses push permission prompts.
 Never claim DONE after only code checks without an open PR.
+The risk gate observes actual check results and reviewer child-session verdicts
+for the same source/test candidate. Risky publication is denied without both.
+If a failing test disappears, the reviewer must consider its original scenario.
+Do not replace a persistence failure assertion with a fake UI-only failure.
 <!-- flutter-harness:end -->

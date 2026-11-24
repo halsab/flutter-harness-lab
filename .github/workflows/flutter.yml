@@ -100,6 +100,8 @@ jobs:
           test -f .opencode/plugins/delivery-guard/guard.mjs
           node --check .opencode/plugins/delivery-guard/index.js
           node --check .opencode/plugins/delivery-guard/guard.mjs
+          test -f .opencode/plugins/delivery-guard/quality.mjs
+          node --check .opencode/plugins/delivery-guard/quality.mjs
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
