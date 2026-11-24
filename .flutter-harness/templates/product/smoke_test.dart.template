@@ -94,7 +94,9 @@ void main() {
       ];
       List<Color> expected(BuildContext context, Brightness brightness) {
         if (platform == TargetPlatform.iOS) {
-          expect(c.CupertinoTheme.of(context).brightness, brightness);
+          // Null is the intentional system-following override, not the effective brightness.
+          expect(c.CupertinoTheme.of(context).brightness, isNull);
+          expect(c.CupertinoTheme.brightnessOf(context), brightness);
           return [
             c.CupertinoColors.systemBlue,
             c.CupertinoColors.systemBackground,
