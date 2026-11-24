@@ -155,11 +155,37 @@ void main() {
         'active-2',
       ]);
     });
+
+    test('failed bulk deletion leaves persisted tasks unchanged', () async {
+      final originalTasks = [
+        const TaskItem(id: 'active', title: 'Keep active'),
+        const TaskItem(
+          id: 'completed',
+          title: 'Keep completed after failure',
+          isCompleted: true,
+        ),
+      ];
+      await repository.saveTasks(originalTasks);
+
+      final rejectingStore = _RejectingSharedPreferencesStore(
+        preferences.getString('my_tasks')!,
+      );
+      SharedPreferencesStorePlatform.instance = rejectingStore;
+
+      await expectLater(repository.deleteCompletedTasks(), throwsStateError);
+
+      final restored = await repository.loadTasks();
+      expect(
+        restored.map((task) => (task.id, task.title, task.isCompleted)),
+        originalTasks.map((task) => (task.id, task.title, task.isCompleted)),
+      );
+    });
   });
 }
 
 class _RejectingSharedPreferencesStore extends InMemorySharedPreferencesStore {
-  _RejectingSharedPreferencesStore() : super.empty();
+  _RejectingSharedPreferencesStore([String? storedTasks])
+    : super.withData({'flutter.my_tasks': ?storedTasks});
 
   @override
   Future<bool> setValue(String valueType, String key, Object value) async {
