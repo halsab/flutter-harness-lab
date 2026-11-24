@@ -35,6 +35,11 @@ check() {
   fi
 }
 check format dart format --output=none --set-exit-if-changed lib test
+if [[ "$failed" -ne 0 ]]; then
+  echo 'Fix formatting first: dart format lib test'
+  printf 'Log: %s\nResults: %s\n' "$LOG" "$RESULT"
+  exit 1
+fi
 check analyze flutter analyze
 if [[ "$LEVEL" != "quick" ]]; then
   check flutter-tests flutter test

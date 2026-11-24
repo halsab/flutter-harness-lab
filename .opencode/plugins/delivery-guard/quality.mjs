@@ -1,0 +1,171 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+const exec = promisify(execFile);
+const scope = ["lib", "test", "integration_test", "pubspec.yaml", "pubspec.lock"];
+async function git(root, args) {
+  return (await exec("git", args, { cwd: root, encoding: "utf8", timeout: 12000, maxBuffer: 4 * 1024 * 1024 })).stdout;
+}
+const split = (value) => value.split("\0").filter(Boolean);
+const unique = (values) => [...new Set(values)].sort();
+const textOf = (content) => typeof content === "string" ? content :
+  Array.isArray(content) ? content.filter(x => x.type === "text").map(x => x.text).join("\n") : "";
+
+export function testNames(source) {
+  return [...source.matchAll(/\btest(?:Widgets)?\s*\(\s*(['"])([^'"\n]+)\1/g)].map(x => x[2]);
+}
+export function classify(paths, request = "", removed = [], diff = "") {
+  const reasons = [];
+  if (paths.some(p => /^lib\//i.test(p) &&
+    /(?:\/(?:data|repositories?|storage|database|migrations?|auth|payments?)(?:\/|$)|(?:repository|storage|database|migration|credential|payment|auth)[^/]*\.dart$)/i.test(p))) {
+    reasons.push("persistent data, storage or sensitive operation changed");
+  }
+  if (paths.some(p => p.startsWith("lib/")) &&
+      (/(?:bulk\s+delet|delete\s+all|clear\s+all|mass\s+delet|удал\p{L}*\s+(?:все|всех|всё)|массов\p{L}*\s+удал)/iu.test(request) ||
+      /(?:\bdelete(?:All|Completed|Many|Bulk)\w*\s*\(|\b(?:clear|remove)All\w*\s*\(|\bDROP\s+TABLE\b)/i.test(diff))) {
+    reasons.push("destructive or bulk operation");
+  }
+  if (removed.length) reasons.push("tests disappeared after a failed check: " + removed.join("; "));
+  return reasons;
+}
+export function publishing(command) {
+  return /(?:^|[;&|\n]\s*|\s)(?:git\s+(?:-C\s+\S+\s+)?push\b|gh\s+pr\s+(?:create|ready|edit)\b)/.test(command || "");
+}
+export function standardCheck(command) {
+  return /(?:^|\s)(?:\.\/)?\.flutter-harness\/bin\/check\.sh\s+\S+\s+standard(?:\s|$)/.test(command || "");
+}
+export function finalVerdict(messages) {
+  if (!Array.isArray(messages)) return false;
+  const final = [...messages].reverse().find(m => m.type === "assistant" && textOf(m.content).trim());
+  return /(?:^|\n)VERDICT: PASS\s*$/.test(textOf(final?.content));
+}
+export function gateReason(candidate, state, reviewPassed) {
+  if (!candidate.reasons.length) return "";
+  if (state.passedDigest !== candidate.digest) {
+    return "Run the standard check on the exact current source and tests; the previous result is absent or stale.";
+  }
+  if (!reviewPassed) return "A completed independent reviewer verdict PASS for this exact diff is required.";
+  return "";
+}
+
+export async function candidate(root, base, request, failedNames = []) {
+  const mergeBase = (await git(root, ["merge-base", base, "HEAD"])).trim();
+  const changed = unique([
+    ...split(await git(root, ["diff", "--name-only", "-z", mergeBase, "--", ...scope])),
+    ...split(await git(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...scope])),
+  ]);
+  const hash = createHash("sha256").update(mergeBase);
+  for (const path of changed) {
+    hash.update("\0" + path + "\0");
+    try { hash.update(await readFile(join(root, path))); }
+    catch (err) { if (err.code !== "ENOENT") throw err; hash.update("<deleted>"); }
+  }
+  const names = [];
+  const testPaths = unique(split(await git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "test", "integration_test"])));
+  for (const path of testPaths.filter(p => p.endsWith("_test.dart"))) {
+    try { names.push(...testNames(await readFile(join(root, path), "utf8")).map(n => path + ": " + n)); }
+    catch (err) { if (err.code !== "ENOENT") throw err; }
+  }
+  const removed = unique(failedNames.filter(n => !names.includes(n)));
+  const diff = await git(root, ["diff", "--unified=0", mergeBase, "--", "lib"]);
+  const additions = diff.split("\n").filter(line => line.startsWith("+") && !line.startsWith("+++")).join("\n");
+  return { digest: hash.digest("hex"), paths: changed, names, removed, reasons: classify(changed, request, removed, additions) };
+}
+
+// All evidence comes from tool hooks and the child session, not a build-agent
+// assertion or a marker file. Ordinary tasks do not launch another model.
+export async function registerQualityGate(ctx, root, base, taskKey) {
+  const key = (id) => "quality/" + id;
+  const pending = (id, call) => "quality-call/" + id + "/" + call;
+  async function readState(id) { return (await ctx.storage.get(key(id))) || {}; }
+  async function view(id) {
+    const task = await ctx.storage.get(taskKey(id));
+    if (!task?.active) return null;
+    const state = await readState(id);
+    const change = await candidate(root, base, task.request || "", state.failedNames || []);
+    return { task, state, change };
+  }
+  async function approved(id, state, change) {
+    if (!state.review || state.review.digest !== change.digest) return false;
+    const child = await ctx.session.get({ sessionID: state.review.childID });
+    if (child.parentID !== id || child.agent !== "reviewer" || child.outcome !== "succeeded") return false;
+    return finalVerdict(await ctx.session.context({ sessionID: state.review.childID }));
+  }
+  async function reason(id) {
+    const v = await view(id);
+    if (!v || !v.change.reasons.length) return "";
+    const approvedReview = v.state.passedDigest === v.change.digest &&
+      await approved(id, v.state, v.change);
+    const why = gateReason(v.change, v.state, approvedReview);
+    if (!why) return "";
+    return "Risk gate: " + v.change.reasons.join("; ") + ". " + why +
+      " Do not drop a failing acceptance test; fix its setup or implementation. " +
+      "Use the read-only reviewer subagent after successful checks; wait for its result. " +
+      "At most one targeted re-review after fixes. Do not bypass this gate.";
+  }
+
+  await ctx.tool.hook("execute.before", async (event) => {
+    const id = event.sessionID;
+    const checking = event.tool === "shell" && standardCheck(event.input?.command);
+    const reviewing = event.tool === "subagent" && event.input?.agent === "reviewer";
+    if (!checking && !reviewing) return;
+    const v = await view(id);
+    if (!v) return;
+    if (checking) {
+      await ctx.storage.set(pending(id, event.id), { kind: "check", digest: v.change.digest, names: v.change.names });
+      return;
+    }
+    // The normal reviewer is used, retaining its configured read-only permissions.
+    // Append a short required verdict contract, not a second review prompt.
+    const extra = [
+      "Independently inspect the complete task diff (including uncommitted/new files) and the relevant source and tests.",
+      "Original requirement: " + (v.task.request || "(see task prompt)"),
+      "Risk flags: " + (v.change.reasons.join("; ") || "requested review"),
+      v.change.removed.length ? "Tests removed after a failed run: " + v.change.removed.join("; ") : "",
+      "For rejected persistence writes, verify the real repository against a seeded storage double that rejects only the write, not a replacement empty store. Assert reload and preserved records. Reject unsupported claims, missing important assertions, and removed failing tests without a valid replacement.",
+      "End with exactly VERDICT: PASS or VERDICT: CHANGES_REQUIRED on its own last line. PASS means no unresolved material findings; if evidence is incomplete, use CHANGES_REQUIRED.",
+    ].filter(Boolean).join("\n");
+    event.input = { ...event.input, prompt: (event.input.prompt || "") + "\n\n[Harness review contract]\n" + extra };
+    await ctx.storage.set(pending(id, event.id), { kind: "review", digest: v.change.digest });
+  });
+  await ctx.tool.hook("execute.after", async (event) => {
+    const id = event.sessionID;
+    if (event.tool !== "shell" && event.tool !== "subagent") return;
+    const call = await ctx.storage.get(pending(id, event.id));
+    if (!call) return;
+    await ctx.storage.remove(pending(id, event.id));
+    if (event.status !== "completed") return;
+    const state = await readState(id);
+    if (call.kind === "check") {
+      const output = textOf(event.result?.content);
+      const exit = event.result?.metadata?.exit;
+      if (exit === 0 && /PASS format/.test(output) && /PASS analyze/.test(output) && /PASS flutter-tests/.test(output)) {
+        await ctx.storage.set(key(id), { ...state, passedDigest: call.digest });
+      } else if (/FAIL flutter-tests/.test(output)) {
+        await ctx.storage.set(key(id), { ...state, passedDigest: null, failedNames: unique([...(state.failedNames || []), ...call.names]) });
+      } else {
+        await ctx.storage.set(key(id), { ...state, passedDigest: null });
+      }
+    } else {
+      const childID = event.result?.output?.sessionID || event.result?.metadata?.sessionID;
+      if (typeof childID === "string" && childID) {
+        await ctx.storage.set(key(id), { ...state, review: { digest: call.digest, childID } });
+      }
+    }
+  });
+
+  // Deny only publication when evidence is missing. Never turn an ask/deny
+  // into allow; existing user approval and force-push rules remain intact.
+  await ctx.permission.hook("evaluate", async (event) => {
+    if (event.action !== "shell" || !event.resources.some(publishing)) return;
+    const why = await reason(event.sessionID);
+    if (why) {
+      event.effect = "deny";
+      event.message = why;
+    }
+  });
+  return { reason, clear: (id) => ctx.storage.remove(key(id)) };
+}
