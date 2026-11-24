@@ -1,36 +1,13 @@
-import 'package:cupertino_ui/cupertino_ui.dart' as c;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' as m;
 
 import 'tokens.dart';
-
-enum AppUiProfile { adaptive, universal }
-
-bool platformUsesCupertino(AppUiProfile profile) =>
-    profile == AppUiProfile.adaptive &&
-    !kIsWeb &&
-    defaultTargetPlatform == TargetPlatform.iOS;
-
-class _ProfileScope extends InheritedWidget {
-  const _ProfileScope({required this.profile, required super.child});
-  final AppUiProfile profile;
-
-  @override
-  bool updateShouldNotify(_ProfileScope oldWidget) => oldWidget.profile != profile;
-}
-
-bool usesCupertino(BuildContext context) => platformUsesCupertino(
-  context.dependOnInheritedWidgetOfExactType<_ProfileScope>()?.profile ??
-      AppUiProfile.adaptive,
-);
 
 class AppRoot extends StatelessWidget {
   const AppRoot({
     super.key,
     required this.title,
     required this.home,
-    this.profile = AppUiProfile.adaptive,
     this.locale,
     this.supportedLocales = const [Locale('en')],
     this.localizationsDelegates,
@@ -38,46 +15,29 @@ class AppRoot extends StatelessWidget {
 
   final String title;
   final Widget home;
-  final AppUiProfile profile;
   final Locale? locale;
   final Iterable<Locale> supportedLocales;
   final Iterable<LocalizationsDelegate<dynamic>>? localizationsDelegates;
 
   @override
-  Widget build(BuildContext context) => _ProfileScope(
-    profile: profile,
-    child: platformUsesCupertino(profile)
-        ? c.CupertinoApp(
-            title: title,
-            debugShowCheckedModeBanner: false,
-            // Leave brightness unset: follow the device's appearance.
-            theme: const c.CupertinoThemeData(
-              primaryColor: c.CupertinoColors.systemBlue,
-            ),
-            home: home,
-            locale: locale,
-            supportedLocales: supportedLocales,
-            localizationsDelegates: localizationsDelegates,
-          )
-        : m.MaterialApp(
-            title: title,
-            debugShowCheckedModeBanner: false,
-            themeMode: m.ThemeMode.system,
-            theme: m.ThemeData(
-              colorScheme: m.ColorScheme.fromSeed(seedColor: AppTokens.materialSeed),
-              useMaterial3: true,
-            ),
-            darkTheme: m.ThemeData(
-              colorScheme: m.ColorScheme.fromSeed(
-                seedColor: AppTokens.materialSeed,
-                brightness: Brightness.dark,
-              ),
-              useMaterial3: true,
-            ),
-            home: home,
-            locale: locale,
-            supportedLocales: supportedLocales,
-            localizationsDelegates: localizationsDelegates,
-          ),
+  Widget build(BuildContext context) => m.MaterialApp(
+    title: title,
+    debugShowCheckedModeBanner: false,
+    themeMode: m.ThemeMode.system,
+    theme: m.ThemeData(
+      colorScheme: m.ColorScheme.fromSeed(seedColor: AppTokens.materialSeed),
+      useMaterial3: true,
+    ),
+    darkTheme: m.ThemeData(
+      colorScheme: m.ColorScheme.fromSeed(
+        seedColor: AppTokens.materialSeed,
+        brightness: Brightness.dark,
+      ),
+      useMaterial3: true,
+    ),
+    home: home,
+    locale: locale,
+    supportedLocales: supportedLocales,
+    localizationsDelegates: localizationsDelegates,
   );
 }
