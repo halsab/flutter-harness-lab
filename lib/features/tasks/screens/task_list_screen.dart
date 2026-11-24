@@ -1,119 +1,75 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../data/task_repository.dart';
-import '../../models/task_item.dart';
-import 'task_list_view.dart';
-import 'task_list_widgets.dart';
+import '../../../design_system/design_system.dart';
+import '../models/task_item.dart';
+import '../models/task_list_view.dart';
+import '../view_models/task_list_view_model.dart';
+import '../widgets/task_list_widgets.dart';
 
 class TaskListScreen extends StatefulWidget {
-  const TaskListScreen({super.key, this.repository});
+  const TaskListScreen({super.key, required this.viewModel});
 
-  final TaskRepository? repository;
+  final TaskListViewModel viewModel;
 
   @override
   State<TaskListScreen> createState() => _TaskListScreenState();
 }
 
 class _TaskListScreenState extends State<TaskListScreen> {
-  late final TaskRepository _repository = widget.repository ?? TaskRepository();
   final _inputController = TextEditingController();
-  var _tasks = <TaskItem>[];
-  var _isLoading = true;
-  var _loadFailed = false;
-  var _taskFilter = TaskFilter.all;
-  var _searchQuery = '';
-  var _taskSort = TaskSort.defaultOrder;
-  final _pendingAddTitles = <String>{};
-  Future<void> _pendingWrites = Future<void>.value();
+  TaskListViewModel get _model => widget.viewModel;
 
   @override
   void initState() {
     super.initState();
-    _loadTasks();
+    _model.addListener(_onModelChanged);
+    _model.loadTasks();
   }
+
+  void _onModelChanged() => setState(() {});
 
   @override
   void dispose() {
+    _model.removeListener(_onModelChanged);
     _inputController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadTasks() async {
-    setState(() {
-      _isLoading = true;
-      _loadFailed = false;
-    });
-    try {
-      final tasks = await _repository.loadTasks();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _tasks = tasks;
-        _isLoading = false;
-      });
-    } on Object {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _isLoading = false;
-        _loadFailed = true;
-      });
+  void _showWriteError() {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось сохранить задачи')),
+      );
     }
   }
 
   void _addTask() {
-    if (_isLoading || _loadFailed) {
-      return;
-    }
     final title = _inputController.text.trim();
-    if (title.isEmpty || _pendingAddTitles.contains(title)) {
-      return;
-    }
-
-    var id = DateTime.now().microsecondsSinceEpoch.toString();
-    while (_tasks.any((task) => task.id == id)) {
-      id = '$id-';
-    }
-
-    final task = TaskItem(id: id, title: title);
-    _pendingAddTitles.add(title);
-    _persistMutation(
-      () => _repository.addTask(task),
+    _model.addTask(
+      title,
       onSaved: () {
-        _pendingAddTitles.remove(title);
-        if (_inputController.text.trim() == title) {
+        if (mounted && _inputController.text.trim() == title) {
           _inputController.clear();
         }
       },
-      onFailure: () => _pendingAddTitles.remove(title),
+      onFailure: _showWriteError,
     );
   }
 
   void _setTaskCompleted(TaskItem task, bool isCompleted) {
-    if (_isLoading || _loadFailed) {
-      return;
-    }
-    _persistMutation(() => _repository.setTaskCompleted(task.id, isCompleted));
+    _model.setTaskCompleted(task.id, isCompleted, onFailure: _showWriteError);
   }
 
   void _deleteTask(TaskItem task) {
-    if (_isLoading || _loadFailed) {
-      return;
-    }
-    _persistMutation(() => _repository.deleteTask(task.id));
+    _model.deleteTask(task.id, onFailure: _showWriteError);
   }
 
   void _duplicateTask(TaskItem task) {
-    if (_isLoading || _loadFailed) {
-      return;
-    }
-    _persistMutation(() => _repository.duplicateTask(task.id));
+    _model.duplicateTask(task.id, onFailure: _showWriteError);
   }
 
   Future<void> _deleteCompletedTasks() async {
-    if (_isLoading || _loadFailed || !_tasks.any((task) => task.isCompleted)) {
+    if (!_model.canMutate || !_model.hasCompleted) {
       return;
     }
     final confirmed = await showDialog<bool>(
@@ -134,12 +90,12 @@ class _TaskListScreenState extends State<TaskListScreen> {
       ),
     );
     if (confirmed == true && mounted) {
-      _persistMutation(_repository.deleteCompletedTasks);
+      _model.deleteCompletedTasks(onFailure: _showWriteError);
     }
   }
 
   Future<void> _editTask(TaskItem task) async {
-    if (_isLoading || _loadFailed) {
+    if (!_model.canMutate) {
       return;
     }
     final title = await showDialog<String>(
@@ -149,53 +105,23 @@ class _TaskListScreenState extends State<TaskListScreen> {
     if (title == null || !mounted) {
       return;
     }
-    _persistMutation(() => _repository.renameTask(task.id, title));
-  }
-
-  void _persistMutation(
-    Future<List<TaskItem>> Function() mutation, {
-    VoidCallback? onSaved,
-    VoidCallback? onFailure,
-  }) {
-    _pendingWrites = _pendingWrites
-        .then((_) async {
-          final savedTasks = await mutation();
-          if (mounted) {
-            setState(() {
-              _tasks = savedTasks;
-              onSaved?.call();
-            });
-          }
-        })
-        .catchError((Object _) {
-          onFailure?.call();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Не удалось сохранить задачи')),
-            );
-          }
-        });
+    _model.renameTask(task.id, title, onFailure: _showWriteError);
   }
 
   @override
   Widget build(BuildContext context) {
-    final listView = deriveTaskListView(
-      _tasks,
-      filter: _taskFilter,
-      searchQuery: _searchQuery,
-      sort: _taskSort,
-    );
+    final listView = _model.listView;
     final visibleTasks = listView.tasks;
     final activeTaskCount = listView.activeTaskCount;
-    final normalizedSearchQuery = _searchQuery.trim().toLowerCase();
+    final normalizedSearchQuery = _model.searchQuery.trim().toLowerCase();
     return Scaffold(
       appBar: AppBar(title: const Text('Мои задачи')),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
+            constraints: const BoxConstraints(maxWidth: AppTokens.contentWidth),
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const AppTokens.pagePadding,
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -204,7 +130,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       identifier: 'task-input',
                       child: TextField(
                         controller: _inputController,
-                        enabled: !_isLoading && !_loadFailed,
+                        enabled: !_model.isLoading && !_model.loadFailed,
                         textInputAction: TextInputAction.done,
                         onSubmitted: (_) => _addTask(),
                         decoration: const InputDecoration(
@@ -215,13 +141,13 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppTokens.space12),
                     SizedBox(
                       width: double.infinity,
                       child: Semantics(
                         identifier: 'add-task',
                         child: FilledButton.icon(
-                          onPressed: _isLoading || _loadFailed
+                          onPressed: _model.isLoading || _model.loadFailed
                               ? null
                               : _addTask,
                           icon: const Icon(Icons.add),
@@ -229,14 +155,13 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    if (!_isLoading && !_loadFailed) ...[
+                    const SizedBox(height: AppTokens.space20),
+                    if (!_model.isLoading && !_model.loadFailed) ...[
                       Semantics(
                         identifier: 'task-search',
                         child: TextField(
                           textInputAction: TextInputAction.search,
-                          onChanged: (query) =>
-                              setState(() => _searchQuery = query),
+                          onChanged: _model.setSearchQuery,
                           decoration: const InputDecoration(
                             labelText: 'Поиск задач',
                             hintText: 'Введите название задачи',
@@ -245,22 +170,21 @@ class _TaskListScreenState extends State<TaskListScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppTokens.space12),
                       Wrap(
-                        spacing: 8,
+                        spacing: AppTokens.space8,
                         children: [
                           for (final filter in TaskFilter.values)
                             ChoiceChip(
                               label: Text(filter.label),
-                              selected: _taskFilter == filter,
-                              onSelected: (_) =>
-                                  setState(() => _taskFilter = filter),
+                              selected: _model.filter == filter,
+                              onSelected: (_) => _model.setFilter(filter),
                             ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppTokens.space12),
                       DropdownButtonFormField<TaskSort>(
-                        initialValue: _taskSort,
+                        initialValue: _model.sort,
                         decoration: const InputDecoration(
                           labelText: 'Сортировка',
                           border: OutlineInputBorder(),
@@ -274,12 +198,12 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         ],
                         onChanged: (sort) {
                           if (sort != null) {
-                            setState(() => _taskSort = sort);
+                            _model.setSort(sort);
                           }
                         },
                       ),
-                      const SizedBox(height: 12),
-                      if (_tasks.any((task) => task.isCompleted))
+                      const SizedBox(height: AppTokens.space12),
+                      if (_model.hasCompleted)
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton.icon(
@@ -289,25 +213,25 @@ class _TaskListScreenState extends State<TaskListScreen> {
                           ),
                         ),
                     ],
-                    if (_isLoading)
+                    if (_model.isLoading)
                       const SizedBox(
                         height: 200,
                         child: Center(child: CircularProgressIndicator()),
                       )
-                    else if (_loadFailed)
+                    else if (_model.loadFailed)
                       SizedBox(
                         height: 200,
-                        child: TaskLoadError(onRetry: _loadTasks),
+                        child: TaskLoadError(onRetry: _model.loadTasks),
                       )
                     else ...[
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.only(bottom: AppTokens.space8),
                         child: Text(
                           'Незавершённых задач: $activeTaskCount',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
-                      if (_tasks.isEmpty)
+                      if (_model.isEmpty)
                         const SizedBox(height: 240, child: EmptyTasks())
                       else if (visibleTasks.isEmpty &&
                           normalizedSearchQuery.isNotEmpty)
@@ -318,7 +242,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       else if (visibleTasks.isEmpty)
                         SizedBox(
                           height: 200,
-                          child: EmptyFilteredTasks(filter: _taskFilter),
+                          child: EmptyFilteredTasks(filter: _model.filter),
                         )
                       else
                         for (final task in visibleTasks)

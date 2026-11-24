@@ -1,4 +1,4 @@
-import '../../models/task_item.dart';
+import 'task_item.dart';
 
 enum TaskFilter {
   all('Все'),

@@ -4,9 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_harness_lab/data/task_repository.dart';
-import 'package:flutter_harness_lab/main.dart';
-import 'package:flutter_harness_lab/models/task_item.dart';
+import 'package:flutter_harness_lab/features/tasks/repositories/task_repository.dart';
+import 'package:flutter_harness_lab/app/app.dart';
+import 'package:flutter_harness_lab/features/tasks/models/task_item.dart';
 
 Finder get _taskInputField => find.descendant(
   of: find.bySemanticsIdentifier('task-input'),
