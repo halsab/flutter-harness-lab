@@ -47,6 +47,23 @@ class TaskRepository {
     return _mutateTasks((tasks) => [...tasks, task]);
   }
 
+  Future<List<TaskItem>> duplicateTask(String taskId) {
+    return _mutateTasks((tasks) {
+      final sourceIndex = tasks.indexWhere((task) => task.id == taskId);
+      if (sourceIndex == -1) {
+        return tasks;
+      }
+      final source = tasks[sourceIndex];
+
+      var duplicateId = DateTime.now().microsecondsSinceEpoch.toString();
+      while (tasks.any((task) => task.id == duplicateId)) {
+        duplicateId = '$duplicateId-';
+      }
+
+      return [...tasks, TaskItem(id: duplicateId, title: source.title)];
+    });
+  }
+
   Future<List<TaskItem>> setTaskCompleted(String taskId, bool isCompleted) {
     return _mutateTasks(
       (tasks) => [

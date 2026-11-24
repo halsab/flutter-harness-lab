@@ -73,12 +73,14 @@ class TaskRow extends StatelessWidget {
     required this.onToggle,
     required this.onEdit,
     required this.onDelete,
+    required this.onDuplicate,
   });
 
   final TaskItem task;
   final ValueChanged<bool> onToggle;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onDuplicate;
 
   @override
   Widget build(BuildContext context) {
@@ -120,6 +122,14 @@ class TaskRow extends StatelessWidget {
                 tooltip: 'Изменить название',
                 onPressed: onEdit,
                 icon: const Icon(Icons.edit_outlined),
+              ),
+            ),
+            Semantics(
+              identifier: 'duplicate-${task.id}',
+              child: IconButton(
+                tooltip: 'Дублировать задачу',
+                onPressed: onDuplicate,
+                icon: const Icon(Icons.content_copy_outlined),
               ),
             ),
             Semantics(

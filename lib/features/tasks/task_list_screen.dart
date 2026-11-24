@@ -105,6 +105,13 @@ class _TaskListScreenState extends State<TaskListScreen> {
     _persistMutation(() => _repository.deleteTask(task.id));
   }
 
+  void _duplicateTask(TaskItem task) {
+    if (_isLoading || _loadFailed) {
+      return;
+    }
+    _persistMutation(() => _repository.duplicateTask(task.id));
+  }
+
   Future<void> _deleteCompletedTasks() async {
     if (_isLoading || _loadFailed || !_tasks.any((task) => task.isCompleted)) {
       return;
@@ -321,6 +328,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                                 _setTaskCompleted(task, isCompleted),
                             onEdit: () => _editTask(task),
                             onDelete: () => _deleteTask(task),
+                            onDuplicate: () => _duplicateTask(task),
                           ),
                     ],
                   ],
