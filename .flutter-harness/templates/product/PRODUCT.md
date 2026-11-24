@@ -70,6 +70,20 @@ full component kits.
 
 Use semantic colors, text styles, spacing, radii, layout widths, motion and
 themes from design_system, with light/dark theme and system font defaults.
+Default color policy: follow system light/dark appearance on all platforms
+(including Flutter Web); no separate theme-settings screen unless requested.
+Material 3 generates both ColorSchemes from Ocean Blue (#2563EB), a seed,
+not a fixed foreground, button or background color. Native iOS Cupertino
+uses CupertinoColors.systemBlue as its dynamic accent and platform semantic
+colors for background, surfaces, label, secondary label, errors and separators.
+Do not feed the Material seed into Cupertino. Resolve dynamic colors with
+the active BuildContext. Use AppColors and AppTextStyles in feature code;
+never freeze resolved colors in static fields or replace them with hand-picked
+light/dark HEX tables. Keep native contrast pairs and component states.
+No palette-selection question for routine new projects. Explicit brand or
+visual requirements can override the seed or platform theme centrally in
+design_system; preserve light/dark behavior. Cover system theme changes on
+both platform implementations in shared starter widget tests.
 Reuse existing controls/patterns before inventing new ones. Feature-specific
 widgets stay in feature, repeated generic patterns belong in design_system.
 Use neutral Flutter layout widgets directly; wrap a control only for real
@@ -85,7 +99,9 @@ For a material new screen, redesign, major navigation/flow or design-system
 change, inspect actual rendered screenshots of the changed screen(s), with
 representative content and the key changed state. For adaptive initial
 adoption inspect both iOS Cupertino and Android or Flutter Web Material;
-for an isolated later change inspect only the relevant visual variants.
+inspect light and dark appearance of both variants at initial adoption.
+For an isolated later change inspect only the affected visual variants and
+themes; for palette or theme changes include both light and dark.
 Check narrow/large layouts and large text using fast widget assertions where
 meaningful, plus a representative desktop width if Web layout changes.
 Use actual local simulator/browser captures, not mockups or Ahem widget-test

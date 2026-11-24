@@ -10,8 +10,12 @@ abstract final class AppColors {
       c.CupertinoDynamicColor.resolve(color, context);
 
   static Color primary(BuildContext context) => usesCupertino(context)
-      ? c.CupertinoTheme.of(context).primaryColor
+      ? _resolve(context, c.CupertinoTheme.of(context).primaryColor)
       : m.Theme.of(context).colorScheme.primary;
+
+  static Color background(BuildContext context) => usesCupertino(context)
+      ? _resolve(context, c.CupertinoColors.systemBackground)
+      : m.Theme.of(context).colorScheme.surface;
 
   static Color surface(BuildContext context) => usesCupertino(context)
       ? _resolve(context, c.CupertinoColors.secondarySystemBackground)
@@ -36,7 +40,9 @@ abstract final class AppColors {
 
 abstract final class AppTextStyles {
   static TextStyle body(BuildContext context) => usesCupertino(context)
-      ? c.CupertinoTheme.of(context).textTheme.textStyle
+      ? c.CupertinoTheme.of(context).textTheme.textStyle.copyWith(
+          color: AppColors.text(context),
+        )
       : m.Theme.of(context).textTheme.bodyMedium ??
             DefaultTextStyle.of(context).style;
 

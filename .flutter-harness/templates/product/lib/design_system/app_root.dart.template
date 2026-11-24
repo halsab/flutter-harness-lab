@@ -50,7 +50,10 @@ class AppRoot extends StatelessWidget {
         ? c.CupertinoApp(
             title: title,
             debugShowCheckedModeBanner: false,
-            theme: const c.CupertinoThemeData(primaryColor: AppTokens.brand),
+            // Leave brightness unset: follow the device's appearance.
+            theme: const c.CupertinoThemeData(
+              primaryColor: c.CupertinoColors.systemBlue,
+            ),
             home: home,
             locale: locale,
             supportedLocales: supportedLocales,
@@ -59,13 +62,14 @@ class AppRoot extends StatelessWidget {
         : m.MaterialApp(
             title: title,
             debugShowCheckedModeBanner: false,
+            themeMode: m.ThemeMode.system,
             theme: m.ThemeData(
-              colorScheme: m.ColorScheme.fromSeed(seedColor: AppTokens.brand),
+              colorScheme: m.ColorScheme.fromSeed(seedColor: AppTokens.materialSeed),
               useMaterial3: true,
             ),
             darkTheme: m.ThemeData(
               colorScheme: m.ColorScheme.fromSeed(
-                seedColor: AppTokens.brand,
+                seedColor: AppTokens.materialSeed,
                 brightness: Brightness.dark,
               ),
               useMaterial3: true,

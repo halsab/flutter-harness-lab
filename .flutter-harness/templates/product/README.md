@@ -15,3 +15,10 @@ patterns only when used. Use native platform text/theme colors from the
 design-system layer; no feature-specific style literals. Keep one shared
 business behavior. Minimal/Custom are optional project-specific implementations;
 do not claim they are prebuilt. No source replacement or pub get at install.
+
+Default appearance: Material 3 derives light/dark ColorSchemes from the
+Ocean Blue seed (#2563EB); Cupertino uses systemBlue and dynamic system
+roles. Both follow system brightness. Change the seed or platform theme
+centrally only for explicit product branding. No custom HEX palette or
+in-app theme picker is required by default. Starter smoke tests switch
+system brightness in a live widget tree on both platforms.

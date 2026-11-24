@@ -50,6 +50,100 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    testWidgets('system light/dark semantic colors on $platform', (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      final dispatcher = tester.binding.platformDispatcher;
+      dispatcher.platformBrightnessTestValue = Brightness.light;
+      addTearDown(() {
+        dispatcher.clearPlatformBrightnessTestValue();
+        debugDefaultTargetPlatformOverride = null;
+      });
+      const seed = Color(0xFF2563EB);
+      expect(AppTokens.materialSeed, seed);
+      late BuildContext probe;
+      await tester.pumpWidget(
+        AppRoot(
+          title: 'Theme test',
+          home: AppPage(
+            title: 'Theme test',
+            child: Builder(
+              builder: (context) {
+                probe = context;
+                // Resolve theme roles in build, so the probe subscribes.
+                return Text(
+                  'Theme probe',
+                  style: AppTextStyles.body(context).copyWith(
+                    color: AppColors.text(context),
+                    backgroundColor: AppColors.background(context),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      List<Color> colors(BuildContext context) => [
+        AppColors.primary(context),
+        AppColors.background(context),
+        AppColors.surface(context),
+        AppColors.text(context),
+        AppColors.muted(context),
+        AppColors.error(context),
+        AppColors.divider(context),
+      ];
+      List<Color> expected(BuildContext context, Brightness brightness) {
+        if (platform == TargetPlatform.iOS) {
+          // Null is the intentional system-following override, not the effective brightness.
+          expect(c.CupertinoTheme.of(context).brightness, isNull);
+          expect(c.CupertinoTheme.brightnessOf(context), brightness);
+          return [
+            c.CupertinoColors.systemBlue,
+            c.CupertinoColors.systemBackground,
+            c.CupertinoColors.secondarySystemBackground,
+            c.CupertinoColors.label,
+            c.CupertinoColors.secondaryLabel,
+            c.CupertinoColors.systemRed,
+            c.CupertinoColors.separator,
+          ].map((color) => c.CupertinoDynamicColor.resolve(color, context)).toList();
+        }
+        final scheme = m.ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: brightness,
+        );
+        expect(m.Theme.of(context).brightness, brightness);
+        return [
+          scheme.primary,
+          scheme.surface,
+          scheme.surfaceContainerLow,
+          scheme.onSurface,
+          scheme.onSurfaceVariant,
+          scheme.error,
+          scheme.outlineVariant,
+        ];
+      }
+      await tester.pumpAndSettle();
+      final light = colors(probe);
+      expect(light, expected(probe, Brightness.light));
+      final lightText = tester.widget<Text>(find.text('Theme probe'));
+      expect(lightText.style?.color, light[3]);
+      dispatcher.platformBrightnessTestValue = Brightness.dark;
+      await tester.pumpAndSettle();
+      final dark = colors(probe);
+      expect(dark, expected(probe, Brightness.dark));
+      // Accent, background and readable foreground must actually change.
+      for (final index in [0, 1, 3]) {
+        expect(dark[index], isNot(light[index]));
+      }
+      final darkText = tester.widget<Text>(find.text('Theme probe'));
+      expect(darkText.style?.color, dark[3]);
+      expect(darkText.style?.backgroundColor, dark[1]);
+      dispatcher.platformBrightnessTestValue = Brightness.light;
+      await tester.pumpAndSettle();
+      expect(colors(probe), light);
+      expect(tester.takeException(), isNull);
+    });
+  }
   testWidgets('universal uses Material on iOS', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
