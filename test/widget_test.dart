@@ -1,17 +1,24 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_harness_lab/data/task_repository.dart';
-import 'package:flutter_harness_lab/main.dart';
-import 'package:flutter_harness_lab/models/task_item.dart';
+import 'package:flutter_harness_lab/app/app.dart';
+import 'package:flutter_harness_lab/design_system/design_system.dart';
+import 'package:flutter_harness_lab/features/tasks/models/task_item.dart';
+import 'package:flutter_harness_lab/features/tasks/repositories/task_repository.dart';
 
 Finder get _taskInputField => find.descendant(
   of: find.bySemanticsIdentifier('task-input'),
   matching: find.byType(TextField),
 );
+
+Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
 
 void main() {
   late TaskRepository repository;
@@ -48,6 +55,46 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('uses native iOS controls below the navigation bar', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await repository.saveTasks([
+      const TaskItem(id: 'ios-task', title: 'Задача на iPhone'),
+      const TaskItem(
+        id: 'ios-completed',
+        title: 'Завершённая задача',
+        isCompleted: true,
+      ),
+    ]);
+
+    await tester.pumpWidget(MyApp(repository: repository));
+    await tester.pumpAndSettle();
+
+    final navigationBar = find.byType(CupertinoNavigationBar);
+    expect(find.byType(CupertinoPageScaffold), findsOneWidget);
+    expect(find.byType(CupertinoTextField), findsNWidgets(2));
+    expect(
+      tester.getTopLeft(find.text('ПРОСТРАНСТВО ДЛЯ ВАЖНОГО')).dy,
+      greaterThanOrEqualTo(tester.getBottomRight(navigationBar).dy),
+    );
+    expect(
+      find.widgetWithText(CupertinoButton, 'Удалить завершённые'),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(TextButton, 'Удалить завершённые'),
+      findsNothing,
+    );
+
+    await tester.ensureVisible(find.bySemanticsIdentifier('edit-ios-task'));
+    await tester.tap(find.bySemanticsIdentifier('edit-ios-task'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CupertinoAlertDialog), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('filters tasks without changing their saved status', (
     tester,
   ) async {
@@ -66,19 +113,16 @@ void main() {
     expect(find.text('Completed task'), findsOneWidget);
     expect(find.text('Незавершённых задач: 1'), findsOneWidget);
 
-    await tester.tap(find.text('Активные'));
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Активные'));
     expect(find.text('Active task'), findsOneWidget);
     expect(find.text('Completed task'), findsNothing);
 
-    await tester.tap(find.text('Завершённые'));
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Завершённые'));
     expect(find.text('Active task'), findsNothing);
     expect(find.text('Completed task'), findsOneWidget);
     expect(find.text('Незавершённых задач: 1'), findsOneWidget);
 
-    await tester.tap(find.text('Все'));
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Все'));
     expect(find.text('Active task'), findsOneWidget);
     expect(find.text('Completed task'), findsOneWidget);
     expect(filterRepository.tasks.map((task) => task.isCompleted), [
@@ -100,8 +144,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: filterRepository));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Активные'));
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Активные'));
     expect(find.text('Нет активных задач'), findsOneWidget);
     expect(find.text('Completed task'), findsNothing);
     expect((await filterRepository.loadTasks()).single.isCompleted, isTrue);
@@ -130,20 +173,16 @@ void main() {
       find.bySemanticsIdentifier('task-search'),
       'Matching',
     );
-    await tester.tap(find.text('Активные'));
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Активные'));
 
-    await tester.tap(find.text('Удалить завершённые'));
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Удалить завершённые'));
     expect(find.text('Удалить завершённые задачи?'), findsOneWidget);
     await tester.tap(find.text('Отмена'));
     await tester.pumpAndSettle();
     expect(deleteRepository.tasks, hasLength(3));
 
-    await tester.tap(find.text('Удалить завершённые'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Удалить').last);
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Удалить завершённые'));
+    await _tapVisible(tester, find.text('Удалить').last);
 
     expect(deleteRepository.tasks.map((task) => task.id), ['active']);
     expect(find.text('Keep this active task'), findsNothing);
@@ -164,10 +203,8 @@ void main() {
     await tester.pumpWidget(MyApp(repository: failedRepository));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Удалить завершённые'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Удалить').last);
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Удалить завершённые'));
+    await _tapVisible(tester, find.text('Удалить').last);
 
     expect(failedRepository.tasks.map((task) => task.id), [
       'active',
@@ -197,8 +234,7 @@ void main() {
     expect(find.text('Read a book'), findsNothing);
     expect(find.text('Незавершённых задач: 2'), findsOneWidget);
 
-    await tester.tap(find.text('Завершённые'));
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Завершённые'));
     expect(find.text('Buy Milk'), findsNothing);
     expect(find.text('MILK the cow'), findsOneWidget);
     expect(find.text('Незавершённых задач: 2'), findsOneWidget);
@@ -229,23 +265,18 @@ void main() {
     expect(top('zebra'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('apple')));
 
-    await tester.tap(find.text('По умолчанию'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('А–Я').last);
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('По умолчанию'));
+    await _tapVisible(tester, find.text('А–Я').last);
     expect(top('apple'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('zebra')));
 
-    await tester.tap(find.text('А–Я').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Я–А').last);
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('А–Я').first);
+    await _tapVisible(tester, find.text('Я–А').last);
     expect(top('zebra'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('apple')));
 
     await tester.enterText(find.bySemanticsIdentifier('task-search'), 'a');
-    await tester.tap(find.text('Активные'));
-    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.text('Активные'));
     expect(find.text('zebra'), findsNothing);
     expect(top('Banana'), lessThan(top('apple')));
     expect(find.text('Незавершённых задач: 2'), findsOneWidget);
@@ -282,6 +313,9 @@ void main() {
     expect(find.text('First task'), findsOneWidget);
     expect(find.text('Second task'), findsOneWidget);
 
+    await tester.ensureVisible(
+      find.bySemanticsIdentifier('complete-${tasks.first.id}'),
+    );
     await tester.tap(find.bySemanticsIdentifier('complete-${tasks.first.id}'));
     await tester.pumpAndSettle();
 
@@ -318,6 +352,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: editRepository));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.pumpAndSettle();
 
@@ -338,6 +373,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Current title'), findsOneWidget);
 
+    await tester.ensureVisible(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'Renamed task');
