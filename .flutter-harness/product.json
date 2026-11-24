@@ -1,6 +1,6 @@
 {
   "schema": 1,
   "architecture": "feature-mvvm",
-  "ui_profile": "adaptive",
+  "ui_profile": "universal",
   "status": "pending"
 }
