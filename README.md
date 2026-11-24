@@ -25,6 +25,23 @@ provider interruption or all OpenCode-version differences.
 loaded in a new OpenCode session and that a short feature reaches a PR.
 Older sessions do not automatically adopt updated plugins.
 
+## Risk review gate
+
+For persistent-data changes, destructive operations, and tests removed after
+a failed standard run, the delivery plugin requires the observed standard
+check result and an actual independent reviewer child-session PASS for the
+same source/test candidate before supported push/PR commands. Missing or stale
+evidence blocks publication; existing push approvals are not bypassed. It also
+checks at session completion. Ordinary changes do not launch extra review
+automatically. The check runner stops on a formatting error before Flutter
+analysis/tests. Fix the format once before rerunning.
+
+The reviewer must inspect removed acceptance tests and consequential persistence
+errors, including reload of seeded storage after a rejected write. A successful
+review is evidence, not a semantic proof. This is a workflow guard for supported
+OpenCode tool actions, not a GitHub security boundary. Real runtime integration
+needs a new local session smoke test.
+
 ## Autonomous workflow
 
 The goal is fast, stable implementation from one concise user requirement.
