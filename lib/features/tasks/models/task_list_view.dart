@@ -1,4 +1,4 @@
-import '../../models/task_item.dart';
+import 'task_item.dart';
 
 enum TaskFilter {
   all('Все'),
@@ -11,18 +11,39 @@ enum TaskFilter {
 
 enum TaskSort {
   defaultOrder('По умолчанию'),
-  ascending('А–Я'),
-  descending('Я–А');
+  ascending('По названию: А–Я'),
+  descending('По названию: Я–А');
 
   const TaskSort(this.label);
   final String label;
 }
 
 class TaskListView {
-  const TaskListView({required this.tasks, required this.activeTaskCount});
+  const TaskListView({
+    required this.tasks,
+    required this.activeTasks,
+    required this.completedTasks,
+    required this.activeTaskCount,
+    required this.isAlphabetical,
+  });
 
   final List<TaskItem> tasks;
+  final List<TaskItem> activeTasks;
+  final List<TaskItem> completedTasks;
   final int activeTaskCount;
+  final bool isAlphabetical;
+}
+
+String taskQuantity(int count) {
+  final lastTwo = count % 100;
+  final noun = lastTwo >= 11 && lastTwo <= 14
+      ? 'задач'
+      : switch (count % 10) {
+          1 => 'задача',
+          2 || 3 || 4 => 'задачи',
+          _ => 'задач',
+        };
+  return '$count $noun';
 }
 
 TaskListView deriveTaskListView(
@@ -52,8 +73,19 @@ TaskListView deriveTaskListView(
         (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()),
       );
   }
+  final alphabetical = sort != TaskSort.defaultOrder;
+  final activeTasks = visibleTasks.where((task) => !task.isCompleted).toList();
+  final completedTasks = visibleTasks
+      .where((task) => task.isCompleted)
+      .toList();
+  final displayTasks = filter == TaskFilter.all && !alphabetical
+      ? [...activeTasks, ...completedTasks]
+      : visibleTasks;
   return TaskListView(
-    tasks: visibleTasks,
+    tasks: displayTasks,
+    activeTasks: activeTasks,
+    completedTasks: completedTasks,
     activeTaskCount: tasks.where((task) => !task.isCompleted).length,
+    isAlphabetical: alphabetical,
   );
 }

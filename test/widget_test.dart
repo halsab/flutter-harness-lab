@@ -1,16 +1,54 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:ui' show SemanticsAction, Tristate;
 
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoSearchTextField;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
-import 'package:flutter_harness_lab/data/task_repository.dart';
-import 'package:flutter_harness_lab/main.dart';
-import 'package:flutter_harness_lab/models/task_item.dart';
+import 'package:flutter_harness_lab/app/app.dart';
+import 'package:flutter_harness_lab/design_system/design_system.dart';
+import 'package:flutter_harness_lab/features/tasks/models/task_item.dart';
+import 'package:flutter_harness_lab/features/tasks/repositories/task_repository.dart';
+import 'package:flutter_harness_lab/features/tasks/view_models/task_list_model.dart';
 
 Finder get _taskInputField => find.descendant(
   of: find.bySemanticsIdentifier('task-input'),
   matching: find.byType(TextField),
+);
+
+Finder get _add => find.bySemanticsIdentifier('add-task');
+Finder get _search => find.bySemanticsIdentifier('task-search');
+
+Future<void> _tap(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _addTask(WidgetTester tester, String title) async {
+  await _tap(tester, _add);
+  await tester.enterText(_taskInputField, title);
+  await tester.pump();
+  await _tap(tester, find.text('Добавить'));
+}
+
+Future<void> _taskAction(WidgetTester tester, String id, String label) async {
+  await _tap(tester, find.bySemanticsIdentifier('actions-$id'));
+  await _tap(tester, find.text(label));
+}
+
+Future<void> _sort(WidgetTester tester, String label) async {
+  await _tap(tester, find.byTooltip('Сортировка'));
+  await _tap(tester, find.text(label));
+}
+
+Finder _scope(String label) => find.descendant(
+  of: find.byWidgetPredicate((widget) => widget is SegmentedButton),
+  matching: find.text(label),
 );
 
 void main() {
@@ -22,27 +60,32 @@ void main() {
     repository = TaskRepository(preferences: preferences);
   });
 
+  Widget materialApp(TaskRepository repository) {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    return App(repository: repository);
+  }
+
   testWidgets('shows an empty state and rejects blank task titles', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
 
-    await tester.pumpWidget(MyApp(repository: repository));
+    await tester.pumpWidget(materialApp(repository));
     await tester.pumpAndSettle();
 
     expect(find.text('Задач пока нет'), findsOneWidget);
     expect(find.text('Добавьте первую задачу'), findsOneWidget);
-    expect(find.text('Незавершённых задач: 0'), findsOneWidget);
+    expect(find.text('Осталось 0 задач'), findsOneWidget);
 
-    final input = find.bySemanticsIdentifier('task-input');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
+    await _tap(tester, find.text('Добавьте первую задачу'));
+    final submit = find.widgetWithText(FilledButton, 'Добавить');
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    await tester.enterText(_taskInputField, '   ');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
-    expect(find.text('Задач пока нет'), findsOneWidget);
-
-    await tester.enterText(input, '   ');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
-    await tester.pump();
-
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    await _tap(tester, find.text('Отмена'));
     expect(find.text('Задач пока нет'), findsOneWidget);
     expect(await repository.loadTasks(), isEmpty);
     semantics.dispose();
@@ -59,25 +102,25 @@ void main() {
         isCompleted: true,
       ),
     ]);
-    await tester.pumpWidget(MyApp(repository: filterRepository));
+    await tester.pumpWidget(materialApp(filterRepository));
     await tester.pumpAndSettle();
 
     expect(find.text('Active task'), findsOneWidget);
     expect(find.text('Completed task'), findsOneWidget);
-    expect(find.text('Незавершённых задач: 1'), findsOneWidget);
+    expect(find.text('Осталось 1 задача'), findsOneWidget);
 
-    await tester.tap(find.text('Активные'));
+    await tester.tap(_scope('Активные'));
     await tester.pumpAndSettle();
     expect(find.text('Active task'), findsOneWidget);
     expect(find.text('Completed task'), findsNothing);
 
-    await tester.tap(find.text('Завершённые'));
+    await tester.tap(_scope('Завершённые'));
     await tester.pumpAndSettle();
     expect(find.text('Active task'), findsNothing);
     expect(find.text('Completed task'), findsOneWidget);
-    expect(find.text('Незавершённых задач: 1'), findsOneWidget);
+    expect(find.text('Осталось 1 задача'), findsOneWidget);
 
-    await tester.tap(find.text('Все'));
+    await tester.tap(_scope('Все'));
     await tester.pumpAndSettle();
     expect(find.text('Active task'), findsOneWidget);
     expect(find.text('Completed task'), findsOneWidget);
@@ -97,10 +140,10 @@ void main() {
         isCompleted: true,
       ),
     ]);
-    await tester.pumpWidget(MyApp(repository: filterRepository));
+    await tester.pumpWidget(materialApp(filterRepository));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Активные'));
+    await tester.tap(_scope('Активные'));
     await tester.pumpAndSettle();
     expect(find.text('Нет активных задач'), findsOneWidget);
     expect(find.text('Completed task'), findsNothing);
@@ -123,31 +166,36 @@ void main() {
         isCompleted: true,
       ),
     ]);
-    await tester.pumpWidget(MyApp(repository: deleteRepository));
+    await tester.pumpWidget(materialApp(deleteRepository));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.bySemanticsIdentifier('task-search'),
-      'Matching',
-    );
-    await tester.tap(find.text('Активные'));
+    await tester.enterText(_search, 'Matching');
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Удалить завершённые'));
+    expect(find.text('Очистить'), findsNothing);
+    await _tap(tester, _scope('Активные'));
+    expect(find.text('Очистить'), findsNothing);
+    await _tap(tester, find.text('Сбросить поиск'));
+    expect(find.text('Keep this active task'), findsOneWidget);
+    expect(find.text('Очистить'), findsNothing);
+    await _tap(tester, _scope('Все'));
+    await tester.tap(find.text('Очистить'));
     await tester.pumpAndSettle();
     expect(find.text('Удалить завершённые задачи?'), findsOneWidget);
+    expect(find.textContaining('все завершённые задачи (2)'), findsOneWidget);
     await tester.tap(find.text('Отмена'));
     await tester.pumpAndSettle();
     expect(deleteRepository.tasks, hasLength(3));
 
-    await tester.tap(find.text('Удалить завершённые'));
+    await tester.tap(find.text('Очистить'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Удалить').last);
     await tester.pumpAndSettle();
 
     expect(deleteRepository.tasks.map((task) => task.id), ['active']);
-    expect(find.text('Keep this active task'), findsNothing);
-    expect(find.text('Незавершённых задач: 1'), findsOneWidget);
+    expect(find.text('Keep this active task'), findsOneWidget);
+    expect(find.text('Matching completed task'), findsNothing);
+    expect(find.text('Other completed task'), findsNothing);
+    expect(find.text('Осталось 1 задача'), findsOneWidget);
   });
 
   testWidgets('keeps tasks unchanged when bulk deletion cannot be saved', (
@@ -161,10 +209,10 @@ void main() {
         isCompleted: true,
       ),
     ]);
-    await tester.pumpWidget(MyApp(repository: failedRepository));
+    await tester.pumpWidget(materialApp(failedRepository));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Удалить завершённые'));
+    await tester.tap(find.text('Очистить'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Удалить').last);
     await tester.pumpAndSettle();
@@ -186,7 +234,7 @@ void main() {
       const TaskItem(id: 'completed', title: 'MILK the cow', isCompleted: true),
       const TaskItem(id: 'other', title: 'Read a book'),
     ]);
-    await tester.pumpWidget(MyApp(repository: searchRepository));
+    await tester.pumpWidget(materialApp(searchRepository));
     await tester.pumpAndSettle();
 
     final search = find.bySemanticsIdentifier('task-search');
@@ -195,13 +243,13 @@ void main() {
     expect(find.text('Buy Milk'), findsOneWidget);
     expect(find.text('MILK the cow'), findsOneWidget);
     expect(find.text('Read a book'), findsNothing);
-    expect(find.text('Незавершённых задач: 2'), findsOneWidget);
+    expect(find.text('Осталось 2 задачи'), findsOneWidget);
 
-    await tester.tap(find.text('Завершённые'));
+    await tester.tap(_scope('Завершённые'));
     await tester.pumpAndSettle();
     expect(find.text('Buy Milk'), findsNothing);
     expect(find.text('MILK the cow'), findsOneWidget);
-    expect(find.text('Незавершённых задач: 2'), findsOneWidget);
+    expect(find.text('Осталось 2 задачи'), findsOneWidget);
 
     await tester.enterText(search, 'missing');
     await tester.pump();
@@ -221,34 +269,31 @@ void main() {
       const TaskItem(id: 'b', title: 'Banana'),
       const TaskItem(id: 'a', title: 'apple'),
     ]);
-    await tester.pumpWidget(MyApp(repository: sortRepository));
+    await tester.pumpWidget(materialApp(sortRepository));
     await tester.pumpAndSettle();
 
     double top(String title) => tester.getTopLeft(find.text(title)).dy;
 
-    expect(top('zebra'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('apple')));
+    expect(top('apple'), lessThan(top('zebra')));
 
-    await tester.tap(find.text('По умолчанию'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('А–Я').last);
-    await tester.pumpAndSettle();
+    await _sort(tester, 'По названию: А–Я');
     expect(top('apple'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('zebra')));
 
-    await tester.tap(find.text('А–Я').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Я–А').last);
-    await tester.pumpAndSettle();
+    await _sort(tester, 'По названию: Я–А');
     expect(top('zebra'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('apple')));
 
     await tester.enterText(find.bySemanticsIdentifier('task-search'), 'a');
-    await tester.tap(find.text('Активные'));
+    await _tap(tester, _scope('Активные'));
     await tester.pumpAndSettle();
     expect(find.text('zebra'), findsNothing);
     expect(top('Banana'), lessThan(top('apple')));
-    expect(find.text('Незавершённых задач: 2'), findsOneWidget);
+    expect(find.text('Осталось 2 задачи'), findsOneWidget);
+    await _tap(tester, _scope('Все'));
+    await _sort(tester, 'По умолчанию');
+    expect(top('apple'), lessThan(top('zebra')));
     expect((await sortRepository.loadTasks()).map((task) => task.title), [
       'zebra',
       'Banana',
@@ -265,17 +310,12 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(MyApp(repository: repository));
+    await tester.pumpWidget(materialApp(repository));
     await tester.pumpAndSettle();
 
-    final input = find.bySemanticsIdentifier('task-input');
-    await tester.enterText(input, 'First task');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
-
-    await tester.enterText(input, 'Second task');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
-    await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
+    await _addTask(tester, 'First task');
+    await _addTask(tester, 'Second task');
+    expect(_taskInputField, findsNothing);
 
     final tasks = await repository.loadTasks();
     expect(tasks, hasLength(2));
@@ -290,16 +330,18 @@ void main() {
     expect(updatedTasks.last.isCompleted, isFalse);
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(MyApp(repository: repository));
+    await tester.pumpWidget(materialApp(repository));
     await tester.pumpAndSettle();
 
     expect(find.text('First task'), findsOneWidget);
     expect(find.text('Second task'), findsOneWidget);
 
-    final deleteButton = find.bySemanticsIdentifier('delete-${tasks.last.id}');
-    await tester.ensureVisible(deleteButton);
-    await tester.tap(deleteButton);
-    await tester.pumpAndSettle();
+    await _taskAction(tester, tasks.last.id, 'Удалить');
+    expect(find.text('Удалить задачу?'), findsOneWidget);
+    await _tap(tester, find.text('Отмена'));
+    expect(await repository.loadTasks(), hasLength(2));
+    await _taskAction(tester, tasks.last.id, 'Удалить');
+    await _tap(tester, find.text('Удалить'));
 
     final finalTasks = await repository.loadTasks();
     expect(finalTasks, hasLength(1));
@@ -315,13 +357,12 @@ void main() {
     final editRepository = _EditableTaskRepository([
       const TaskItem(id: 'edit-me', title: 'Current title', isCompleted: true),
     ]);
-    await tester.pumpWidget(MyApp(repository: editRepository));
+    await tester.pumpWidget(materialApp(editRepository));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
-    await tester.pumpAndSettle();
+    await _taskAction(tester, 'edit-me', 'Переименовать');
 
-    final editField = find.byType(TextField).last;
+    final editField = _taskInputField;
     expect(
       tester.widget<TextField>(editField).controller!.text,
       'Current title',
@@ -338,11 +379,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Current title'), findsOneWidget);
 
-    await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, 'Renamed task');
-    await tester.tap(find.text('Сохранить'));
-    await tester.pumpAndSettle();
+    await _taskAction(tester, 'edit-me', 'Переименовать');
+    await tester.enterText(editField, 'Renamed task');
+    await tester.pump();
+    await _tap(tester, find.text('Сохранить'));
 
     expect((await editRepository.loadTasks()).single.title, 'Renamed task');
     expect(find.text('Renamed task'), findsOneWidget);
@@ -350,7 +390,7 @@ void main() {
     expect((await editRepository.loadTasks()).single.isCompleted, isTrue);
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(MyApp(repository: editRepository));
+    await tester.pumpWidget(materialApp(editRepository));
     await tester.pumpAndSettle();
     expect(find.text('Renamed task'), findsOneWidget);
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
@@ -362,14 +402,11 @@ void main() {
     final duplicateRepository = _EditableTaskRepository([
       const TaskItem(id: 'source', title: 'Duplicate me', isCompleted: true),
     ]);
-    await tester.pumpWidget(MyApp(repository: duplicateRepository));
+    await tester.pumpWidget(materialApp(duplicateRepository));
     await tester.pumpAndSettle();
 
-    final duplicateButton = find.bySemanticsIdentifier('duplicate-source');
-    await tester.ensureVisible(duplicateButton);
-    await tester.tap(duplicateButton);
-    await tester.pump();
-    await tester.pumpAndSettle();
+    await _tap(tester, _scope('Завершённые'));
+    await _taskAction(tester, 'source', 'Дублировать');
 
     final tasks = await duplicateRepository.loadTasks();
     expect(tasks, hasLength(2));
@@ -379,9 +416,13 @@ void main() {
     expect(tasks.last.id, isNot('source'));
     expect(tasks.last.title, 'Duplicate me');
     expect(tasks.last.isCompleted, isFalse);
+    expect(find.text('Duplicate me'), findsOneWidget);
+    expect(find.text('Задача дублирована'), findsOneWidget);
+    await _tap(tester, find.text('Показать задачу'));
+    expect(find.text('Duplicate me'), findsNWidgets(2));
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(MyApp(repository: duplicateRepository));
+    await tester.pumpWidget(materialApp(duplicateRepository));
     await tester.pumpAndSettle();
     expect(find.text('Duplicate me'), findsNWidgets(2));
     expect(await duplicateRepository.loadTasks(), hasLength(2));
@@ -391,13 +432,14 @@ void main() {
     tester,
   ) async {
     final delayedRepository = _DelayedTaskRepository();
-    await tester.pumpWidget(MyApp(repository: delayedRepository));
-
-    expect(tester.widget<TextField>(_taskInputField).enabled, isFalse);
+    await tester.pumpWidget(materialApp(delayedRepository));
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester.widget<AppIconButton>(find.byType(AppIconButton)).onPressed,
       isNull,
     );
+    await tester.tap(_add, warnIfMissed: false);
+    await tester.pump();
+    expect(_taskInputField, findsNothing);
 
     delayedRepository.completeLoad([
       const TaskItem(id: 'saved', title: 'Saved before startup'),
@@ -405,12 +447,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Saved before startup'), findsOneWidget);
+    await _tap(tester, _add);
     expect(tester.widget<TextField>(_taskInputField).enabled, isTrue);
   });
 
   testWidgets('shows retry after storage initialization fails', (tester) async {
     final retryingRepository = _RetryingTaskRepository();
-    await tester.pumpWidget(MyApp(repository: retryingRepository));
+    await tester.pumpWidget(materialApp(retryingRepository));
     await tester.pumpAndSettle();
 
     expect(find.text('Не удалось загрузить задачи'), findsOneWidget);
@@ -426,88 +469,102 @@ void main() {
   testWidgets('keeps a rejected add retryable and hides the unsaved task', (
     tester,
   ) async {
-    final flakyRepository = _FlakyTaskRepository();
-    await tester.pumpWidget(MyApp(repository: flakyRepository));
+    const original = TaskItem(
+      id: 'original',
+      title: 'Saved task',
+      isCompleted: true,
+    );
+    await repository.saveTasks([original]);
+    final store = _ToggleWriteStore(jsonEncode([original.toJson()]));
+    SharedPreferencesStorePlatform.instance = store;
+    await tester.pumpWidget(materialApp(repository));
     await tester.pumpAndSettle();
 
-    final input = find.bySemanticsIdentifier('task-input');
-    final addButton = find.bySemanticsIdentifier('add-task');
-    await tester.enterText(input, 'Retry this task');
-    await tester.tap(addButton);
-    await tester.pumpAndSettle();
+    await _tap(tester, _scope('Завершённые'));
+    await _tap(tester, _add);
+    await tester.enterText(_taskInputField, 'Retry this task');
+    await tester.pump();
+    await tester.tap(find.text('Добавить'));
+    await tester.pump();
+    await tester.pump();
+    final failure = find.text('Не удалось сохранить задачи');
 
-    expect(find.text('Не удалось сохранить задачи'), findsOneWidget);
+    expect(store.rejectedWrites, 1);
+    expect(failure, findsOneWidget);
     expect(
       tester.widget<TextField>(_taskInputField).controller!.text,
       'Retry this task',
     );
-    expect(find.byType(Checkbox), findsNothing);
-    expect(flakyRepository.tasks, isEmpty);
+    expect(
+      find.bySemanticsIdentifier('complete-original', skipOffstage: false),
+      findsOneWidget,
+    );
+    expect((await repository.loadTasks()).map((task) => task.id), ['original']);
 
-    await tester.tap(addButton);
-    await tester.pumpAndSettle();
+    store.reject = false;
+    await _tap(tester, find.text('Добавить'));
 
-    expect(flakyRepository.tasks.single.title, 'Retry this task');
-    expect(find.byType(Checkbox), findsOneWidget);
-    expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
+    expect((await repository.loadTasks()).map((task) => task.title), [
+      'Saved task',
+      'Retry this task',
+    ]);
+    expect(_taskInputField, findsNothing);
+    expect(find.text('Retry this task'), findsNothing);
+    expect(find.text('Задача добавлена'), findsOneWidget);
+    await _tap(tester, find.text('Показать задачу'));
+    expect(find.text('Retry this task'), findsOneWidget);
   });
 
-  testWidgets('serializes writes when rapid actions overlap', (tester) async {
-    final semantics = tester.ensureSemantics();
+  test('serializes writes when rapid actions overlap', () async {
     final delayedRepository = _SerializedTaskRepository();
-    await tester.pumpWidget(MyApp(repository: delayedRepository));
-    await tester.pumpAndSettle();
+    final model = TaskListModel(delayedRepository);
+    addTearDown(model.dispose);
+    await model.load();
 
-    final input = find.bySemanticsIdentifier('task-input');
-    await tester.enterText(input, 'First write');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
-    await tester.pump();
+    final first = model.add('First write');
     await delayedRepository.firstWriteStarted.future;
 
-    await tester.enterText(input, 'Second write');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
-    await tester.pump();
+    final second = model.add('Second write');
+    await Future<void>.delayed(Duration.zero);
     expect(delayedRepository.startedTitles, ['First write']);
 
     delayedRepository.releaseFirstWrite.complete();
-    await tester.pumpAndSettle();
+    expect(await Future.wait([first, second]), everyElement(isNotNull));
 
     expect(delayedRepository.startedTitles, ['First write', 'Second write']);
-    expect(delayedRepository.tasks.map((task) => task.title), [
+    final reloaded = TaskListModel(delayedRepository);
+    addTearDown(reloaded.dispose);
+    await reloaded.load();
+    expect(reloaded.view.tasks.map((task) => task.title), [
       'First write',
       'Second write',
     ]);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(MyApp(repository: delayedRepository));
-    await tester.pumpAndSettle();
-
-    expect(find.text('First write'), findsOneWidget);
-    expect(find.text('Second write'), findsOneWidget);
-    semantics.dispose();
   });
 
   testWidgets('does not enqueue a draft twice while its save is pending', (
     tester,
   ) async {
     final delayedRepository = _SerializedTaskRepository();
-    await tester.pumpWidget(MyApp(repository: delayedRepository));
+    await tester.pumpWidget(materialApp(delayedRepository));
     await tester.pumpAndSettle();
 
-    final input = find.bySemanticsIdentifier('task-input');
-    final addButton = find.bySemanticsIdentifier('add-task');
-    await tester.enterText(input, 'First write');
-    await tester.tap(addButton);
+    await _tap(tester, _add);
+    await tester.enterText(_taskInputField, 'First write');
+    await tester.pump();
+    final submit = find.widgetWithText(FilledButton, 'Добавить');
+    await tester.tap(submit);
     await tester.pump();
     await delayedRepository.firstWriteStarted.future;
 
-    await tester.tap(addButton);
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    await tester.tap(submit, warnIfMissed: false);
     await tester.pump();
     delayedRepository.releaseFirstWrite.complete();
     await tester.pumpAndSettle();
 
     expect(delayedRepository.startedTitles, ['First write']);
     expect(delayedRepository.tasks, hasLength(1));
+    await _tap(tester, _add);
     expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
   });
 
@@ -523,21 +580,121 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetViewInsets);
 
-    await tester.pumpWidget(MyApp(repository: layoutRepository));
+    await tester.pumpWidget(materialApp(layoutRepository));
     await tester.pumpAndSettle();
 
-    final input = find.bySemanticsIdentifier('task-input');
-    final addButton = find.bySemanticsIdentifier('add-task');
-    await tester.ensureVisible(input);
-    await tester.enterText(input, 'Short screen task');
-    await tester.ensureVisible(addButton);
-    await tester.tap(addButton);
-    await tester.pumpAndSettle();
+    await _addTask(tester, 'Short screen task');
 
     expect(layoutRepository.addAttempts, 1);
     expect(tester.takeException(), isNull);
     semantics.dispose();
   });
+
+  testWidgets('iOS pull discloses search without losing a focused query', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await repository.saveTasks([
+      const TaskItem(id: 'other', title: 'Other task'),
+      for (var i = 0; i < 20; i++)
+        TaskItem(id: '$i', title: 'Matching task $i'),
+    ]);
+    await tester.pumpWidget(App(repository: repository));
+    await tester.pumpAndSettle();
+    final list = find.byKey(const ValueKey('task-list'));
+    final search = find.byType(CupertinoSearchTextField);
+    expect(search, findsNothing);
+    final completion = tester
+        .getSemantics(find.bySemanticsIdentifier('complete-other'))
+        .getSemanticsData();
+    expect(completion.flagsCollection.isEnabled, Tristate.isTrue);
+    expect(completion.hasAction(SemanticsAction.tap), isTrue);
+
+    await tester.drag(list, const Offset(0, 110));
+    await tester.pumpAndSettle();
+    expect(search, findsOneWidget);
+    await tester.drag(list, const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(search, findsNothing);
+
+    await _tap(tester, find.bySemanticsLabel('Открыть поиск'));
+    expect(search, findsOneWidget);
+    await tester.enterText(search, 'Matching');
+    await tester.pumpAndSettle();
+    await tester.drag(list, const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<CupertinoSearchTextField>(search).controller!.text,
+      'Matching',
+    );
+    expect(find.text('Other task'), findsNothing);
+    await _tap(tester, find.bySemanticsLabel('Очистить поиск'));
+    expect(
+      tester.widget<CupertinoSearchTextField>(search).controller!.text,
+      isEmpty,
+    );
+    expect(find.text('Other task'), findsOneWidget);
+    await tester.enterText(search, 'Matching');
+    await tester.pumpAndSettle();
+    await _tap(tester, find.text('Отмена'));
+    expect(search, findsNothing);
+    expect(find.text('Other task'), findsOneWidget);
+  });
+
+  testWidgets('narrow screen with large text keeps the scope menu usable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await repository.saveTasks([
+      const TaskItem(
+        id: 'long',
+        title: 'Подготовить документы для поездки и проверить срок действия',
+      ),
+      const TaskItem(
+        id: 'completed',
+        title: 'Оплатить интернет',
+        isCompleted: true,
+      ),
+    ]);
+    await tester.pumpWidget(materialApp(repository));
+    await tester.pumpAndSettle();
+
+    await _tap(tester, find.byTooltip('Статус: Все'));
+    await _tap(tester, find.text('Завершённые').last);
+    expect(find.text('Оплатить интернет'), findsOneWidget);
+    expect(find.textContaining('Подготовить документы'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('follows live system appearance on ${platform.name}', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+      await tester.pumpWidget(App(repository: repository));
+      await tester.pumpAndSettle();
+      final body = find.byType(AppStateMessage);
+      expect(
+        usesCupertino(tester.element(body)),
+        platform == TargetPlatform.iOS,
+      );
+      final light = AppColors.background(tester.element(body));
+
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+      await tester.pumpAndSettle();
+      final dark = AppColors.background(tester.element(body));
+      expect(dark.computeLuminance(), lessThan(light.computeLuminance()));
+    });
+  }
 }
 
 class _EditableTaskRepository extends TaskRepository {
@@ -608,21 +765,17 @@ class _RetryingTaskRepository extends TaskRepository {
   }
 }
 
-class _FlakyTaskRepository extends TaskRepository {
-  final tasks = <TaskItem>[];
-  var _shouldRejectNextAdd = true;
+class _ToggleWriteStore extends InMemorySharedPreferencesStore {
+  _ToggleWriteStore(String data) : super.withData({'flutter.my_tasks': data});
+
+  bool reject = true;
+  var rejectedWrites = 0;
 
   @override
-  Future<List<TaskItem>> loadTasks() async => List.of(tasks);
-
-  @override
-  Future<List<TaskItem>> addTask(TaskItem task) async {
-    if (_shouldRejectNextAdd) {
-      _shouldRejectNextAdd = false;
-      throw StateError('Storage is temporarily unavailable');
-    }
-    tasks.add(task);
-    return List.of(tasks);
+  Future<bool> setValue(String valueType, String key, Object value) {
+    if (!reject) return super.setValue(valueType, key, value);
+    rejectedWrites++;
+    return Future.value(false);
   }
 }
 

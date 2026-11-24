@@ -10,7 +10,7 @@ class TaskRepository {
   static const _storageKey = 'my_tasks';
 
   final SharedPreferences? preferences;
-  static Future<void> _pendingMutations = Future<void>.value();
+  static Future<void>? _pendingMutations;
 
   Future<List<TaskItem>> loadTasks() async {
     final storage = preferences ?? await SharedPreferences.getInstance();
@@ -111,13 +111,26 @@ class TaskRepository {
   Future<List<TaskItem>> _mutateTasks(
     List<TaskItem> Function(List<TaskItem>) mutation,
   ) {
-    final result = _pendingMutations.then((_) async {
+    final previous = _pendingMutations ?? Future<void>.value();
+    final result = previous.then((_) async {
       final currentTasks = await loadTasks();
       final updatedTasks = mutation(currentTasks);
       await saveTasks(updatedTasks);
       return updatedTasks;
     });
-    _pendingMutations = result.then<void>((_) {}, onError: (Object _) {});
+    late final Future<void> tail;
+    void clearIfIdle() {
+      if (identical(_pendingMutations, tail)) _pendingMutations = null;
+    }
+
+    // Do not retain an idle Future owned by a caller's zone.
+    tail = result.then<void>(
+      (_) => clearIfIdle(),
+      onError: (Object _) {
+        clearIfIdle();
+      },
+    );
+    _pendingMutations = tail;
     return result;
   }
 }
