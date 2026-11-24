@@ -226,22 +226,22 @@ void main() {
 
     double top(String title) => tester.getTopLeft(find.text(title)).dy;
 
-    expect(top('zebra'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('apple')));
+    expect(top('apple'), lessThan(top('zebra')));
 
     await tester.tap(find.text('По умолчанию'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('А–Я').last);
     await tester.pumpAndSettle();
     expect(top('apple'), lessThan(top('Banana')));
-    expect(top('Banana'), lessThan(top('zebra')));
+    expect(top('apple'), lessThan(top('zebra')));
 
     await tester.tap(find.text('А–Я').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Я–А').last);
     await tester.pumpAndSettle();
-    expect(top('zebra'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('apple')));
+    expect(top('Banana'), lessThan(top('zebra')));
 
     await tester.enterText(find.bySemanticsIdentifier('task-search'), 'a');
     await tester.tap(find.text('Активные'));
@@ -318,6 +318,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: editRepository));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.pumpAndSettle();
 
@@ -338,6 +339,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Current title'), findsOneWidget);
 
+    await tester.ensureVisible(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'Renamed task');

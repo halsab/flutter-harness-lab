@@ -40,20 +40,50 @@ TaskListView deriveTaskListView(
     };
     return matchesFilter && task.title.toLowerCase().contains(normalizedQuery);
   }).toList();
-  switch (sort) {
-    case TaskSort.defaultOrder:
-      break;
-    case TaskSort.ascending:
-      visibleTasks.sort(
-        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
-      );
-    case TaskSort.descending:
-      visibleTasks.sort(
-        (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()),
-      );
-  }
+  final activeTasks = _sortTasks(
+    visibleTasks.where((task) => !task.isCompleted).toList(),
+    sort,
+  );
+  final completedTasks = _sortTasks(
+    visibleTasks.where((task) => task.isCompleted).toList(),
+    sort,
+  );
   return TaskListView(
-    tasks: visibleTasks,
+    tasks: [...activeTasks, ...completedTasks],
     activeTaskCount: tasks.where((task) => !task.isCompleted).length,
   );
+}
+
+List<TaskItem> _sortTasks(List<TaskItem> tasks, TaskSort sort) {
+  if (sort == TaskSort.defaultOrder) return tasks;
+  final indexed = tasks.indexed.toList();
+  indexed.sort((a, b) {
+    final comparison = _compareTitles(a.$2.title, b.$2.title);
+    final directed = sort == TaskSort.ascending ? comparison : -comparison;
+    return directed == 0 ? a.$1.compareTo(b.$1) : directed;
+  });
+  return indexed.map((entry) => entry.$2).toList();
+}
+
+const _russianAlphabet = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
+
+int _compareTitles(String first, String second) {
+  final firstRunes = first.toLowerCase().runes.toList();
+  final secondRunes = second.toLowerCase().runes.toList();
+  final sharedLength = firstRunes.length < secondRunes.length
+      ? firstRunes.length
+      : secondRunes.length;
+  for (var index = 0; index < sharedLength; index++) {
+    final firstRank = _titleCharacterRank(firstRunes[index]);
+    final secondRank = _titleCharacterRank(secondRunes[index]);
+    final comparison = firstRank.compareTo(secondRank);
+    if (comparison != 0) return comparison;
+  }
+  return firstRunes.length.compareTo(secondRunes.length);
+}
+
+int _titleCharacterRank(int rune) {
+  final character = String.fromCharCode(rune);
+  final russianIndex = _russianAlphabet.indexOf(character);
+  return russianIndex >= 0 ? russianIndex : rune + _russianAlphabet.length;
 }

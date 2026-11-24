@@ -115,9 +115,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
     final activeTaskCount = listView.activeTaskCount;
     final normalizedSearchQuery = _model.searchQuery.trim().toLowerCase();
     return Scaffold(
-      appBar: AppBar(title: const Text('Мои задачи')),
+      appBar: AppBar(title: const Text('Мои задачи'), centerTitle: false),
       body: SafeArea(
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: AppTokens.contentWidth),
             child: Padding(
@@ -153,7 +154,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: AppTokens.space20),
+                    const SizedBox(height: AppTokens.space24),
                     if (_model.canMutate) ...[
                       Semantics(
                         identifier: 'task-search',
@@ -168,7 +169,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: AppTokens.space12),
+                      const SizedBox(height: AppTokens.space16),
                       Wrap(
                         spacing: AppTokens.space8,
                         children: [
@@ -180,7 +181,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                             ),
                         ],
                       ),
-                      const SizedBox(height: AppTokens.space12),
+                      const SizedBox(height: AppTokens.space16),
                       DropdownButtonFormField<TaskSort>(
                         initialValue: _model.sort,
                         decoration: const InputDecoration(
@@ -200,7 +201,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                           }
                         },
                       ),
-                      const SizedBox(height: AppTokens.space12),
+                      const SizedBox(height: AppTokens.space16),
                       if (_model.hasCompleted)
                         Align(
                           alignment: Alignment.centerRight,
@@ -224,7 +225,8 @@ class _TaskListScreenState extends State<TaskListScreen> {
                     else ...[
                       Padding(
                         padding: const EdgeInsets.only(
-                          bottom: AppTokens.space8,
+                          top: AppTokens.space8,
+                          bottom: AppTokens.space12,
                         ),
                         child: Text(
                           'Незавершённых задач: $activeTaskCount',
@@ -244,8 +246,20 @@ class _TaskListScreenState extends State<TaskListScreen> {
                           height: 200,
                           child: EmptyFilteredTasks(filter: _model.filter),
                         )
-                      else
-                        for (final task in visibleTasks)
+                      else ...[
+                        if (visibleTasks.any((task) => !task.isCompleted))
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppTokens.space8,
+                            ),
+                            child: Text(
+                              'В работе',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                          ),
+                        for (final task in visibleTasks.where(
+                          (task) => !task.isCompleted,
+                        ))
                           TaskRow(
                             task: task,
                             onToggle: (isCompleted) =>
@@ -254,6 +268,31 @@ class _TaskListScreenState extends State<TaskListScreen> {
                             onDelete: () => _deleteTask(task),
                             onDuplicate: () => _duplicateTask(task),
                           ),
+                        if (_model.filter == TaskFilter.all &&
+                            visibleTasks.any((task) => task.isCompleted)) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              top: AppTokens.space16,
+                              bottom: AppTokens.space12,
+                            ),
+                            child: Text(
+                              'Завершённые · ${visibleTasks.where((task) => task.isCompleted).length}',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                        for (final task in visibleTasks.where(
+                          (task) => task.isCompleted,
+                        ))
+                          TaskRow(
+                            task: task,
+                            onToggle: (isCompleted) =>
+                                _setTaskCompleted(task, isCompleted),
+                            onEdit: () => _editTask(task),
+                            onDelete: () => _deleteTask(task),
+                            onDuplicate: () => _duplicateTask(task),
+                          ),
+                      ],
                     ],
                   ],
                 ),
