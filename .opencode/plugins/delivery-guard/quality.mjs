@@ -47,7 +47,9 @@ export function publishing(command) {
   return /(?:^|[;&|\n]\s*|\s)(?:git\s+(?:-C\s+\S+\s+)?push\b|gh\s+pr\s+(?:create|ready|edit)\b)/.test(command || "");
 }
 export function standardCheck(command) {
-  return /(?:^|\s)(?:\.\/)?\.flutter-harness\/bin\/check\.sh\s+\S+\s+standard(?:\s|$)/.test(command || "");
+  // check.sh defaults to standard when LEVEL is omitted. Match a standalone
+  // invocation, not a quick check or an unrelated command mentioning the script.
+  return /^[ \t]*(?:bash[ \t]+)?(?:\.\/)?\.flutter-harness\/bin\/check\.sh[ \t]+[^\s;&|<>]+(?:[ \t]+standard(?:[ \t]+(?:mobile-web|mobile))?)?[ \t]*$/.test(command || "");
 }
 export function finalVerdict(messages) {
   if (!Array.isArray(messages)) return false;
