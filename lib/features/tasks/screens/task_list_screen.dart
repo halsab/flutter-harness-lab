@@ -121,7 +121,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: AppTokens.contentWidth),
             child: Padding(
-              padding: const AppTokens.pagePadding,
+              padding: AppTokens.pagePadding,
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -130,7 +130,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       identifier: 'task-input',
                       child: TextField(
                         controller: _inputController,
-                        enabled: !_model.isLoading && !_model.loadFailed,
+                        enabled: _model.canMutate,
                         textInputAction: TextInputAction.done,
                         onSubmitted: (_) => _addTask(),
                         decoration: const InputDecoration(
@@ -147,16 +147,14 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       child: Semantics(
                         identifier: 'add-task',
                         child: FilledButton.icon(
-                          onPressed: _model.isLoading || _model.loadFailed
-                              ? null
-                              : _addTask,
+                          onPressed: _model.canMutate ? _addTask : null,
                           icon: const Icon(Icons.add),
                           label: const Text('Добавить задачу'),
                         ),
                       ),
                     ),
                     const SizedBox(height: AppTokens.space20),
-                    if (!_model.isLoading && !_model.loadFailed) ...[
+                    if (_model.canMutate) ...[
                       Semantics(
                         identifier: 'task-search',
                         child: TextField(
