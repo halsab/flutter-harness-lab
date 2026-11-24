@@ -130,11 +130,62 @@ void main() {
       expect(restored, hasLength(1));
       expect(restored.single.id, 'new');
     });
+
+    test('deletes every completed task and preserves active tasks', () async {
+      await repository.saveTasks([
+        const TaskItem(id: 'active-1', title: 'First active'),
+        const TaskItem(
+          id: 'completed-1',
+          title: 'First completed',
+          isCompleted: true,
+        ),
+        const TaskItem(id: 'active-2', title: 'Second active'),
+        const TaskItem(
+          id: 'completed-2',
+          title: 'Second completed',
+          isCompleted: true,
+        ),
+      ]);
+
+      final remaining = await repository.deleteCompletedTasks();
+
+      expect(remaining.map((task) => task.id), ['active-1', 'active-2']);
+      expect((await repository.loadTasks()).map((task) => task.id), [
+        'active-1',
+        'active-2',
+      ]);
+    });
+
+    test('failed bulk deletion leaves persisted tasks unchanged', () async {
+      final originalTasks = [
+        const TaskItem(id: 'active', title: 'Keep active'),
+        const TaskItem(
+          id: 'completed',
+          title: 'Keep completed after failure',
+          isCompleted: true,
+        ),
+      ];
+      await repository.saveTasks(originalTasks);
+
+      final rejectingStore = _RejectingSharedPreferencesStore(
+        preferences.getString('my_tasks')!,
+      );
+      SharedPreferencesStorePlatform.instance = rejectingStore;
+
+      await expectLater(repository.deleteCompletedTasks(), throwsStateError);
+
+      final restored = await repository.loadTasks();
+      expect(
+        restored.map((task) => (task.id, task.title, task.isCompleted)),
+        originalTasks.map((task) => (task.id, task.title, task.isCompleted)),
+      );
+    });
   });
 }
 
 class _RejectingSharedPreferencesStore extends InMemorySharedPreferencesStore {
-  _RejectingSharedPreferencesStore() : super.empty();
+  _RejectingSharedPreferencesStore([String? storedTasks])
+    : super.withData({'flutter.my_tasks': ?storedTasks});
 
   @override
   Future<bool> setValue(String valueType, String key, Object value) async {

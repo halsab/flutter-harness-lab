@@ -85,6 +85,12 @@ class TaskRepository {
     );
   }
 
+  Future<List<TaskItem>> deleteCompletedTasks() {
+    return _mutateTasks(
+      (tasks) => tasks.where((task) => !task.isCompleted).toList(),
+    );
+  }
+
   Future<List<TaskItem>> _mutateTasks(
     List<TaskItem> Function(List<TaskItem>) mutation,
   ) {
