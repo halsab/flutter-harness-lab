@@ -59,6 +59,13 @@ jobs:
           PRODUCT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python3 .flutter-harness/bin/check-product.py . --base "$PRODUCT_BASE"
       - run: flutter pub get
-      - run: dart format --output=none --set-exit-if-changed lib test
+      - name: Check Dart formatting
+        id: dart_format
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Show required formatting diff
+        if: failure() && steps.dart_format.outcome == 'failure'
+        run: |
+          dart format lib test
+          git diff -- lib test
       - run: flutter analyze
       - run: flutter test

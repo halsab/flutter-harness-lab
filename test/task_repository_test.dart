@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
-import 'package:flutter_harness_lab/data/task_repository.dart';
-import 'package:flutter_harness_lab/models/task_item.dart';
+import 'package:flutter_harness_lab/features/tasks/repositories/task_repository.dart';
+import 'package:flutter_harness_lab/features/tasks/models/task_item.dart';
 
 void main() {
   group('TaskRepository', () {

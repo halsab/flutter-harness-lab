@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/task_item.dart';
-import 'task_list_view.dart';
+import '../../../design_system/design_system.dart';
+import '../models/task_item.dart';
+import '../models/task_list_view.dart';
 
 class EmptyFilteredTasks extends StatelessWidget {
   const EmptyFilteredTasks({super.key, required this.filter});
@@ -32,7 +33,7 @@ class TaskLoadError extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text('Не удалось загрузить задачи'),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppTokens.space8),
         TextButton(onPressed: onRetry, child: const Text('Повторить')),
       ],
     );
@@ -53,9 +54,9 @@ class EmptyTasks extends StatelessWidget {
             size: 52,
             color: Theme.of(context).colorScheme.primary,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTokens.space12),
           Text('Задач пока нет', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppTokens.space4),
           Text(
             'Добавьте первую задачу',
             style: Theme.of(context).textTheme.bodyMedium,
@@ -86,9 +87,12 @@ class TaskRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final textStyle = Theme.of(context).textTheme.bodyLarge;
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: AppTokens.space8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.space8,
+          vertical: AppTokens.space4,
+        ),
         child: Row(
           children: [
             Semantics(
@@ -102,7 +106,7 @@ class TaskRow extends StatelessWidget {
                 },
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppTokens.space8),
             Expanded(
               child: Text(
                 task.title,
