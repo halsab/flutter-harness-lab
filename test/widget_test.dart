@@ -356,6 +356,37 @@ void main() {
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
   });
 
+  testWidgets('duplicates a task from the list without changing its source', (
+    tester,
+  ) async {
+    final duplicateRepository = _EditableTaskRepository([
+      const TaskItem(id: 'source', title: 'Duplicate me', isCompleted: true),
+    ]);
+    await tester.pumpWidget(MyApp(repository: duplicateRepository));
+    await tester.pumpAndSettle();
+
+    final duplicateButton = find.bySemanticsIdentifier('duplicate-source');
+    await tester.ensureVisible(duplicateButton);
+    await tester.tap(duplicateButton);
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    final tasks = await duplicateRepository.loadTasks();
+    expect(tasks, hasLength(2));
+    expect(tasks.first.id, 'source');
+    expect(tasks.first.title, 'Duplicate me');
+    expect(tasks.first.isCompleted, isTrue);
+    expect(tasks.last.id, isNot('source'));
+    expect(tasks.last.title, 'Duplicate me');
+    expect(tasks.last.isCompleted, isFalse);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(MyApp(repository: duplicateRepository));
+    await tester.pumpAndSettle();
+    expect(find.text('Duplicate me'), findsNWidgets(2));
+    expect(await duplicateRepository.loadTasks(), hasLength(2));
+  });
+
   testWidgets('does not accept tasks until the saved list has loaded', (
     tester,
   ) async {
@@ -525,6 +556,17 @@ class _EditableTaskRepository extends TaskRepository {
       title: title,
       isCompleted: tasks[index].isCompleted,
     );
+    return List.of(tasks);
+  }
+
+  @override
+  Future<List<TaskItem>> duplicateTask(String taskId) async {
+    final source = tasks.firstWhere((task) => task.id == taskId);
+    var id = DateTime.now().microsecondsSinceEpoch.toString();
+    while (tasks.any((task) => task.id == id)) {
+      id = '$id-';
+    }
+    tasks.add(TaskItem(id: id, title: source.title));
     return List.of(tasks);
   }
 

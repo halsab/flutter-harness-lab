@@ -118,6 +118,51 @@ void main() {
       expect(restored.single.isCompleted, isTrue);
     });
 
+    test('duplicates a task as a new active task and persists both', () async {
+      await repository.saveTasks([
+        const TaskItem(
+          id: 'completed-source',
+          title: 'Original',
+          isCompleted: true,
+        ),
+      ]);
+
+      final duplicated = await repository.duplicateTask('completed-source');
+      final copy = duplicated.last;
+
+      expect(duplicated, hasLength(2));
+      expect(copy.id, isNot('completed-source'));
+      expect(copy.title, 'Original');
+      expect(copy.isCompleted, isFalse);
+      expect(duplicated.first.id, 'completed-source');
+      expect(duplicated.first.title, 'Original');
+      expect(duplicated.first.isCompleted, isTrue);
+
+      final restored = await TaskRepository(preferences: preferences)
+          .loadTasks();
+      expect(restored.map((task) => task.id), ['completed-source', copy.id]);
+      expect(restored.last.isCompleted, isFalse);
+    });
+
+    test('failed duplication leaves the persisted source unchanged', () async {
+      const source = TaskItem(
+        id: 'source',
+        title: 'Original task',
+        isCompleted: true,
+      );
+      await repository.saveTasks([source]);
+      SharedPreferencesStorePlatform.instance =
+          _RejectingSharedPreferencesStore(preferences.getString('my_tasks'));
+
+      await expectLater(repository.duplicateTask(source.id), throwsStateError);
+
+      final restored = await repository.loadTasks();
+      expect(restored, hasLength(1));
+      expect(restored.single.id, source.id);
+      expect(restored.single.title, source.title);
+      expect(restored.single.isCompleted, isTrue);
+    });
+
     test('replaces the previously saved list', () async {
       await repository.saveTasks([
         const TaskItem(id: 'old', title: 'Old task'),
