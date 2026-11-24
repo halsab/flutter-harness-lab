@@ -31,6 +31,18 @@ export function classify(paths, request = "", removed = [], diff = "") {
   if (removed.length) reasons.push("tests disappeared after a failed check: " + removed.join("; "));
   return reasons;
 }
+// Count additions and deletions in source/tests, excluding generated lockfiles.
+export function reviewEffort({ files, lines }, reasons = []) {
+  if (lines > 400 || files > 8) return "xhigh";
+  if (lines > 100 || files > 3 || reasons.length) return "high";
+  return "medium";
+}
+const reviewModel = "openai/gpt-6-luna";
+const effortRank = { medium: 1, high: 2, xhigh: 3 };
+export function matchingReviewModel(model, required) {
+  return model?.providerID === "openai" && model?.id === "gpt-6-luna" &&
+    (effortRank[model.variant] || 0) >= effortRank[required];
+}
 export function publishing(command) {
   return /(?:^|[;&|\n]\s*|\s)(?:git\s+(?:-C\s+\S+\s+)?push\b|gh\s+pr\s+(?:create|ready|edit)\b)/.test(command || "");
 }
@@ -53,10 +65,27 @@ export function gateReason(candidate, state, reviewPassed) {
 
 export async function candidate(root, base, request, failedNames = []) {
   const mergeBase = (await git(root, ["merge-base", base, "HEAD"])).trim();
+  const untracked = split(await git(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...scope]));
   const changed = unique([
-    ...split(await git(root, ["diff", "--name-only", "-z", mergeBase, "--", ...scope])),
-    ...split(await git(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...scope])),
+    ...split(await git(root, ["diff", "--no-renames", "--name-only", "-z", mergeBase, "--", ...scope])),
+    ...untracked,
   ]);
+  const measured = changed.filter(p => p !== "pubspec.lock");
+  const measuredSet = new Set(measured);
+  let lines = 0;
+  const stats = split(await git(root, ["diff", "--no-renames", "--numstat", "-z", mergeBase, "--", ...scope]));
+  for (const row of stats) {
+    const match = row.match(/^(\d+|-)\t(\d+|-)\t([\s\S]+)$/);
+    if (!match || !measuredSet.has(match[3])) continue;
+    lines += match[1] === "-" || match[2] === "-" ? 401 : Number(match[1]) + Number(match[2]);
+  }
+  for (const path of untracked.filter(p => measuredSet.has(p))) {
+    const data = await readFile(join(root, path));
+    if (data.includes(0)) { lines += 401; continue; }
+    const source = data.toString("utf8");
+    if (source.length) lines += source.split("\n").length - (source.endsWith("\n") ? 1 : 0);
+  }
+  const size = { files: measured.length, lines };
   const hash = createHash("sha256").update(mergeBase);
   for (const path of changed) {
     hash.update("\0" + path + "\0");
@@ -72,7 +101,10 @@ export async function candidate(root, base, request, failedNames = []) {
   const removed = unique(failedNames.filter(n => !names.includes(n)));
   const diff = await git(root, ["diff", "--unified=0", mergeBase, "--", "lib"]);
   const additions = diff.split("\n").filter(line => line.startsWith("+") && !line.startsWith("+++")).join("\n");
-  return { digest: hash.digest("hex"), paths: changed, names, removed, reasons: classify(changed, request, removed, additions) };
+  const reasons = classify(changed, request, removed, additions);
+  const effort = reviewEffort(size, reasons);
+  if (effort === "xhigh") reasons.push("large change requires independent review");
+  return { digest: hash.digest("hex"), paths: changed, names, removed, reasons, size, effort };
 }
 
 // All evidence comes from tool hooks and the child session, not a build-agent
@@ -92,6 +124,7 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
     if (!state.review || state.review.digest !== change.digest) return false;
     const child = await ctx.session.get({ sessionID: state.review.childID });
     if (child.parentID !== id || child.agent !== "reviewer" || child.outcome !== "succeeded") return false;
+    if (!matchingReviewModel(child.model, change.effort)) return false;
     return finalVerdict(await ctx.session.context({ sessionID: state.review.childID }));
   }
   async function reason(id) {
@@ -102,6 +135,8 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
     const why = gateReason(v.change, v.state, approvedReview);
     if (!why) return "";
     return "Risk gate: " + v.change.reasons.join("; ") + ". " + why +
+      " Reviewer route: Luna #" + v.change.effort + " (" + v.change.size.files +
+      " files, " + v.change.size.lines + " changed lines). " +
       " Do not drop a failing acceptance test; fix its setup or implementation. " +
       "Use the read-only reviewer subagent after successful checks; wait for its result. " +
       "At most one targeted re-review after fixes. Do not bypass this gate.";
@@ -128,7 +163,13 @@ export async function registerQualityGate(ctx, root, base, taskKey) {
       "For rejected persistence writes, verify the real repository against a seeded storage double that rejects only the write, not a replacement empty store. Assert reload and preserved records. Reject unsupported claims, missing important assertions, and removed failing tests without a valid replacement.",
       "End with exactly VERDICT: PASS or VERDICT: CHANGES_REQUIRED on its own last line. PASS means no unresolved material findings; if evidence is incomplete, use CHANGES_REQUIRED.",
     ].filter(Boolean).join("\n");
-    event.input = { ...event.input, prompt: (event.input.prompt || "") + "\n\n[Harness review contract]\n" + extra };
+    // Select the variant at the actual subagent invocation. Keep the same read-only
+    // reviewer role; honor a stronger explicit Luna review but never a weaker one.
+    const requested = typeof event.input.model === "string" && event.input.model.startsWith(reviewModel + "#")
+      ? event.input.model.slice(reviewModel.length + 1) : "";
+    const effort = (effortRank[requested] || 0) > effortRank[v.change.effort] ? requested : v.change.effort;
+    event.input = { ...event.input, model: reviewModel + "#" + effort,
+      prompt: (event.input.prompt || "") + "\n\n[Harness review contract]\n" + extra };
     await ctx.storage.set(pending(id, event.id), { kind: "review", digest: v.change.digest });
   });
   await ctx.tool.hook("execute.after", async (event) => {

@@ -45,4 +45,9 @@ The risk gate observes actual check results and reviewer child-session verdicts
 for the same source/test candidate. Risky publication is denied without both.
 If a failing test disappears, the reviewer must consider its original scenario.
 Do not replace a persistence failure assertion with a fake UI-only failure.
+Reviewer effort is selected by the plugin from actual source/test diff size:
+Luna Medium up to 100 changed lines/3 files, High up to 400 lines/8 files
+or for risk-flagged changes, Extra High (xhigh) above either large threshold.
+Large changes require independent review. A weaker child model/variant cannot
+satisfy required review. No extra reviewer for trivial changes or tier loops.
 <!-- flutter-harness:end -->

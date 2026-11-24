@@ -25,6 +25,20 @@ provider interruption or all OpenCode-version differences.
 loaded in a new OpenCode session and that a short feature reaches a PR.
 Older sessions do not automatically adopt updated plugins.
 
+## Adaptive reviewer effort
+
+The plugin routes the existing read-only reviewer at actual invocation:
+- Luna Medium: <=100 added/deleted lines and <=3 files, no risk flags.
+- Luna High: <=400 lines and <=8 files, or elevated risk.
+- Luna Extra High (xhigh): above either large-change threshold.
+
+Source/test diff includes untracked new files and excludes pubspec.lock from
+size. Large changes require independent review; trivial changes still skip
+it. Only one reviewer is used, with the required actual child-session model
+variant verified for publication. This is an initial heuristic to tune from
+observed review quality and overhead. Build and Sol settings are unchanged.
+Verify variant availability and routing on the installed OpenCode runtime.
+
 ## Risk review gate
 
 For persistent-data changes, destructive operations, and tests removed after
