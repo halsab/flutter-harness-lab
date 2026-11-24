@@ -142,6 +142,49 @@ void main() {
     ]);
   });
 
+  testWidgets('sorts display order without changing saved tasks', (
+    tester,
+  ) async {
+    final sortRepository = _EditableTaskRepository([
+      const TaskItem(id: 'z', title: 'zebra', isCompleted: true),
+      const TaskItem(id: 'b', title: 'Banana'),
+      const TaskItem(id: 'a', title: 'apple'),
+    ]);
+    await tester.pumpWidget(MyApp(repository: sortRepository));
+    await tester.pumpAndSettle();
+
+    double top(String title) => tester.getTopLeft(find.text(title)).dy;
+
+    expect(top('zebra'), lessThan(top('Banana')));
+    expect(top('Banana'), lessThan(top('apple')));
+
+    await tester.tap(find.text('По умолчанию'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('А–Я').last);
+    await tester.pumpAndSettle();
+    expect(top('apple'), lessThan(top('Banana')));
+    expect(top('Banana'), lessThan(top('zebra')));
+
+    await tester.tap(find.text('А–Я').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Я–А').last);
+    await tester.pumpAndSettle();
+    expect(top('zebra'), lessThan(top('Banana')));
+    expect(top('Banana'), lessThan(top('apple')));
+
+    await tester.enterText(find.bySemanticsIdentifier('task-search'), 'a');
+    await tester.tap(find.text('Активные'));
+    await tester.pumpAndSettle();
+    expect(find.text('zebra'), findsNothing);
+    expect(top('Banana'), lessThan(top('apple')));
+    expect(find.text('Незавершённых задач: 2'), findsOneWidget);
+    expect((await sortRepository.loadTasks()).map((task) => task.title), [
+      'zebra',
+      'Banana',
+      'apple',
+    ]);
+  });
+
   testWidgets('adds, completes, persists, and deletes tasks at narrow width', (
     tester,
   ) async {
