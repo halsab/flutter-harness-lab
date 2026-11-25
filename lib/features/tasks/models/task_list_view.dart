@@ -10,7 +10,7 @@ enum TaskFilter {
 }
 
 enum TaskSort {
-  defaultOrder('По умолчанию'),
+  defaultOrder('По добавлению'),
   ascending('А–Я'),
   descending('Я–А');
 
