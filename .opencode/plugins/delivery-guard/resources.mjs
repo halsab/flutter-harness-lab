@@ -47,10 +47,13 @@ export async function registerResourceGuard(ctx, taskKey, reviewInputs, prepareR
     }
     const last = attempts.at(-1);
     const lastOutcome = outcomes.at(-1);
-    if (attempts.some(x=>x.key===key) && !(last?.key===key && lastOutcome==="ERROR")) return "Harness: reviewer input unchanged; fix the findings or complete missing evidence before re-review.";
-    if (outcomes.filter(x=>x==="PASS" || x==="CHANGES_REQUIRED").length >= 2)
+    if (attempts.some(x=>x.key===key) && !(last?.key===key && lastOutcome==="ERROR")) {
+      if (last?.key===key && lastOutcome==="CHANGES_REQUIRED" && attempts.length===1 && !last.dispute) return "";
+      return "Harness: reviewer input unchanged; confirmed or unresolved findings must be fixed; no further unchanged-input review.";
+    }
+    if (outcomes.filter((x,i)=>!attempts[i].dispute && (x==="PASS" || x==="CHANGES_REQUIRED")).length >= 2)
       return "Harness: substantive reviewer attempt budget exhausted.";
-    if (attempts.length >= 2 && !outcomes.some(x=>x==="BLOCKED" || x==="ERROR"))
+    if (attempts.length >= 2 && !attempts.some(x=>x.dispute) && !outcomes.some(x=>x==="BLOCKED" || x==="ERROR"))
       return "Harness: reviewer attempt budget exhausted.";
     if (outcomes.filter(x=>x==="BLOCKED" || x==="ERROR").length >= 2)
       return "Harness: technical reviewer recovery budget exhausted.";
@@ -86,8 +89,18 @@ export async function registerResourceGuard(ctx, taskKey, reviewInputs, prepareR
         const input = await reviewInputs(id);
         const why = await budget(id,state,input.key);
         if (why) throw Error(why);
+        const prior=(state.reviews || []).at(-1);
+        if (prior?.key===input.key && prior.childID && !prior.dispute) {
+          const messages=await ctx.session.context({sessionID:prior.childID});
+          if (reviewVerdict(messages)==="CHANGES_REQUIRED") {
+            const final=[...messages].reverse().find(m=>m.type==="assistant" && (typeof m.content==="string" ? m.content.trim() : m.content?.some(x=>x.type==="text" && x.text.trim())));
+            const report=typeof final?.content==="string" ? final.content : final?.content?.filter(x=>x.type==="text").map(x=>x.text).join("\n");
+            if (!report || report.length>16000) throw Error("Prior review report missing or oversized; preserve findings for owner");
+            input.dispute={childID:prior.childID,report};
+          }
+        }
         await prepareReview(event,input);
-        state.reviews = [...(state.reviews || []),{call:event.id,key:input.key}];
+        state.reviews = [...(state.reviews || []),{call:event.id,key:input.key,dispute:!!input.dispute}];
         await record(id,"review-dispatched",{call:event.id,model:event.input.model});
       }
       if (role === "advisor") event.input = {...event.input, model:"openai/gpt-6.2-sol#medium"};

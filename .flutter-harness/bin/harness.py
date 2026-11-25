@@ -195,17 +195,58 @@ def branch(root, base):
     return name
 
 
+def fetch_base(root,base):
+    # Linked worktrees share refs and FETCH_HEAD.
+    git(root,"fetch","--no-write-fetch-head","origin",
+        "+refs/heads/"+base+":refs/remotes/origin/"+base)
+    return text(git(root,"rev-parse","refs/remotes/origin/"+base))
+
+
+def workspace_assignment(root):
+    path=work(root)/"workspace.json"
+    return read_json(path) if path.is_file() else None
+
+
+def slot_path(platform):
+    require(platform in ("ios","android","web"),"Unknown runtime slot")
+    return Path.home()/".cache/flutter-harness/slots"/(platform+".json")
+
+
+def slot_owner(platform):
+    path=slot_path(platform)
+    return read_json(path) if path.is_file() else None
+
+
+def assert_runtime_access(root,platform,device=None):
+    assigned=workspace_assignment(root)
+    lease=slot_owner(platform)
+    if assigned:
+        require(assigned.get("branch")==text(git(root,"branch","--show-current")),
+                "Worktree branch changed; restore its assigned task branch")
+        require(assigned.get("platform")==platform and lease==assigned and assigned.get("root")==str(root),
+                "Runtime not reserved for this worktree; use its assigned slot")
+        require(platform=="web" or device==assigned.get("device"),"Device differs from reserved target")
+    else:
+        require(lease is None,"Runtime slot reserved by another Harness worktree: "+platform)
+
+
+@contextmanager
+def runtime_access(root,platform,device=None):
+    with target_lock("slot",platform):
+        assert_runtime_access(root,platform,device)
+        yield
+
+
 def begin(root, c, name):
     base = c["integration_branch"]
     require(not name.startswith("-"), "Invalid branch")
     git(root, "check-ref-format", "--branch", name)
     require(name not in (base, "main", "master", "app", "develop") and
             not name.startswith("-"), "Unsafe feature branch")
+    assigned=workspace_assignment(root)
+    require(not assigned or assigned.get("branch")==name,"Use the preassigned worktree branch: "+str((assigned or {}).get("branch")))
     require(not dirty(root), "Dirty checkout; preserve existing changes before begin")
-    git(root, "fetch", "origin", base)
-    require(text(git(root, "rev-parse", "FETCH_HEAD")) ==
-            text(git(root, "rev-parse", "origin/" + base)),
-            "origin integration reference is stale")
+    fetch_base(root,base)
     installed_revision(root,c,base_ref="origin/"+base)
     current = text(git(root, "symbolic-ref", "--short", "HEAD"))
     task_path = work(root)/"task.json"
@@ -217,7 +258,7 @@ def begin(root, c, name):
             return
     if current != name:
         git(root, "switch", "-c", name, "origin/" + base)
-        for filename in ("check.json","delivery.json","delivery-result.json","delivery-state.json","runtime.json","visual-plan.json","visual-preflight.json","runtime-selection.json","sessions.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
+        for filename in ("check.json","delivery.json","delivery-result.json","delivery-state.json","runtime.json","visual-plan.json","visual-preflight.json","runtime-selection.json","sessions.json","baseline.json","check-attempt.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
             (work(root)/filename).unlink(missing_ok=True)
     require(text(git(root, "merge-base", "HEAD", "origin/" + base)) ==
             text(git(root, "rev-parse", "origin/" + base)),
@@ -257,21 +298,75 @@ def doctor(root, c, operation, only=None):
     require(not missing, "Missing required prerequisites")
 
 
+def current_check(root,digest):
+    """Read the canonical receipt only when no verification owns the lock."""
+    folder=work(root)
+    folder.mkdir(parents=True,exist_ok=True)
+    with (folder/"check.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock,fcntl.LOCK_SH|fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        receipt=folder/"check.json"
+        if not receipt.is_file():
+            return False
+        value=read_json(receipt)
+        return value.get("status")=="PASS" and value.get("digest")==digest
+
+
 def check(root, c):
+    folder = work(root)
+    folder.mkdir(parents=True,exist_ok=True)
+    # A second canonical check cannot erase a running check's receipt.
+    with (folder/"check.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Blocked("Standard check already running; inspect check-attempt.json")
+        attempt = {"status":"RUNNING","branch":text(git(root,"branch","--show-current")),
+                   "revision":c["revision"],"started_at":int(time.time()*1000),"pid":os.getpid()}
+        path = folder/"check-attempt.json"
+        atomic_json(path,attempt)
+        try:
+            check_candidate(root,c,attempt)
+        except BaseException as exc:
+            attempt.update(status="INTERRUPTED" if isinstance(exc,(KeyboardInterrupt,SystemExit)) else "FAIL",
+                           error_type=type(exc).__name__,finished_at=int(time.time()*1000))
+            atomic_json(path,attempt)
+            raise
+        attempt.update(status="PASS",finished_at=int(time.time()*1000))
+        atomic_json(path,attempt)
+
+
+def check_candidate(root,c,attempt):
     receipt = work(root) / "check.json"
     receipt.unlink(missing_ok=True)
     event(root, "check-start")
     require((root / ".flutter-harness/product.json").is_file(), "Missing product policy configuration")
     logs = Path(tempfile.mkdtemp(prefix="prepare-", dir=work(root)))
-    run(root, "flutter", "pub", "get", log=logs / "pub-get.log")
-    run(root, "dart", "format", "lib", "test", log=logs / "format.log")
+    run(root, "flutter", "pub", "get", log=logs / "pub-get.log",timeout=120)
+    run(root, "dart", "format", "lib", "test", log=logs / "format.log",timeout=60)
     before = fingerprint(root)
     # Unique artifact directory prevents collisions between runs/checkouts.
     artifact_dir = Path(tempfile.mkdtemp(prefix="standard-", dir=work(root)))
     environment = dict(os.environ, HARNESS_ARTIFACTS_DIR=str(artifact_dir))
+    attempt.update(digest=before,artifacts=str(artifact_dir.relative_to(root)))
+    atomic_json(work(root)/"check-attempt.json",attempt)
     event(root, "check-run", artifacts=str(artifact_dir.relative_to(root)))
     # Keep short runner stdout visible for the OpenCode quality hook.
-    run(root, "bash", str(HERE / "check.sh"), ".", "standard", c["profile"], env=environment, timeout=2400)
+    try:
+        run(root, "bash", str(HERE / "check.sh"), ".", "standard", c["profile"], env=environment, timeout=2400)
+    except (Blocked,subprocess.TimeoutExpired):
+        reports=list(artifact_dir.glob("check-*.tsv"))
+        if len(reports)==1:
+            with reports[0].open(encoding="utf-8") as stream:
+                rows=list(csv.DictReader(stream,delimiter="\t"))
+            attempt["checks"]=rows
+            attempt["report"]=str(reports[0].relative_to(root))
+            failures=[r for r in rows if r.get("status")!="PASS"]
+            if failures:
+                event(root,"check-failed",check=failures[-1]["check"],status=failures[-1]["status"],exit=failures[-1]["exit_code"],report=attempt["report"])
+        raise
     require(fingerprint(root) == before, "Check inputs changed during verification")
     reports = list(artifact_dir.glob("check-*.tsv"))
     require(len(reports) == 1, "Missing unique runner report")
@@ -279,6 +374,8 @@ def check(root, c):
         checks = list(csv.DictReader(f, delimiter="\t"))
     require({r.get("check") for r in checks if r.get("status")=="PASS"} ==
             {"format","product","analyze","flutter-tests"}, "Incomplete standard runner evidence")
+    attempt["checks"]=checks
+    attempt["report"]=str(reports[0].relative_to(root))
     atomic_json(receipt, {"digest": before, "status": "PASS", "checks":checks,
                           "report":str(reports[0]), "checked_at": int(time.time())})
     event(root, "check-pass", digest=before)
@@ -407,10 +504,12 @@ def deliver(root, c):
     """Called only after the OpenCode policy gate and owner publication approval.
     The receipt is workflow evidence, not an adversarial security boundary."""
     name = branch(root, c["integration_branch"])
+    assigned=workspace_assignment(root)
+    require(not assigned or assigned["branch"]==name,"Worktree branch differs from assigned task")
     receipt = read_json(work(root) / "check.json")
     digest = fingerprint(root)
-    require(receipt.get("status") == "PASS" and receipt.get("digest") == digest,
-            "Missing/stale standard check receipt; run check")
+    require(current_check(root,digest),
+            "Missing/stale standard check receipt or check running; run check")
     manifest = delivery_manifest(root,c)
     visual = visual_evidence(root,manifest.get("visual_interaction") is True,emit=False) if manifest.get("visual_required") is True or manifest.get("visual_interaction") is True else None
     required_e2e = manifest.get("required_e2e", [])
@@ -424,7 +523,7 @@ def deliver(root, c):
     repo = origin_repo(root)
     base = c["integration_branch"]
     # Refresh base before publishing; never merge/rebase implicitly.
-    git(root, "fetch", "origin", base)
+    fetch_base(root,base)
     require(text(git(root, "merge-base", "HEAD", "origin/" + base)) ==
             text(git(root, "rev-parse", "origin/" + base)),
             "Integration branch advanced; reconcile and recheck")
@@ -563,6 +662,12 @@ def probe_runtime(root, platform, device=None):
 
 
 def runtime_targets(root,c,only=None):
+    assigned=workspace_assignment(root)
+    if assigned:
+        platform,device=assigned["platform"],assigned.get("device")
+        require(only in (None,platform),"Task requires another platform; use the correct workspace slot")
+        assert_runtime_access(root,platform,device)
+        return [(platform,device)]
     devices = json.loads(run(root,"flutter","devices","--machine",capture=True,timeout=60))
     require(isinstance(devices,list),"Invalid Flutter device discovery")
     choices = {"ios":[],"android":[]}
@@ -615,6 +720,7 @@ def visual_preflight(root,c,only=None):
     unavailable = []
     for platform,target in ([pin] if pin else runtime_targets(root,c,only)):
         try:
+            assert_runtime_access(root,platform,target)
             dimensions = probe_runtime(root,platform,target)
         except (Blocked,OSError,ValueError,subprocess.TimeoutExpired) as exc:
             unavailable.append({"platform":platform,"device":target,"reason":str(exc)[:800]})
@@ -626,7 +732,7 @@ def visual_preflight(root,c,only=None):
     raise Blocked("No capture-capable selected runtime target")
 
 
-def launch_auto(root,c,only=None,fresh=False):
+def launch_auto(root,c,only=None,fresh=False,*,baseline=False):
     """First successful launch pins the task target. No silent platform switch
     after baseline, no boot/install/reset of devices, no all-platform build."""
     pin = pinned_target(root)
@@ -638,13 +744,12 @@ def launch_auto(root,c,only=None,fresh=False):
     require(task.get("branch")==text(git(root,"branch","--show-current")) and task.get("revision")==c["revision"],
             "Runtime task receipt is stale; begin on the correct branch")
     if digest != task.get("baseline_digest"):
-        checked = work(root)/"check.json"
-        require(checked.is_file() and read_json(checked).get("status")=="PASS" and
-                read_json(checked).get("digest")==digest,
+        require(current_check(root,digest),
                 "Run the canonical check on the changed candidate before building runtime")
     unavailable = []
     for platform,target in ([pin] if pin else runtime_targets(root,c,only)):
         try:
+            assert_runtime_access(root,platform,target)
             dimensions = probe_runtime(root,platform,target)
             previous = work(root)/"runtime.json"
             old = read_json(previous) if previous.is_file() else {}
@@ -654,7 +759,8 @@ def launch_auto(root,c,only=None,fresh=False):
             # replaced, or another app is foregrounded.
             if (not fresh and pin and platform!="web" and old.get("digest")==digest
                     and old.get("platform")==platform and old.get("device")==target):
-                event(root,"runtime-reused",platform=platform,digest=digest)
+                with runtime_access(root,platform,target):
+                    event(root,"runtime-reused",platform=platform,digest=digest)
                 result = {"status":"READY","platform":platform,"target":target,"digest":digest,
                           "reused":True,"note":"Prior launch reused; inspect actual foreground UI or use --fresh"}
             else:
@@ -670,6 +776,8 @@ def launch_auto(root,c,only=None,fresh=False):
         atomic_json(work(root)/"runtime-selection.json",{"branch":text(git(root,"branch","--show-current")),
                     "platform":platform,"device":target})
         output(**result)
+        if baseline and digest==task.get("baseline_digest"):
+            capture_baseline(root,task,platform)
         return
     output(**save_preflight(root,[],unavailable))
     raise Blocked("Pinned runtime failed; preserve comparable evidence and diagnose it" if pin else
@@ -677,6 +785,11 @@ def launch_auto(root,c,only=None,fresh=False):
 
 
 def launch(root, c, platform, device, *, preprobed=False, emit=True):
+    with runtime_access(root,platform,device):
+        return launch_reserved(root,c,platform,device,preprobed=preprobed,emit=emit)
+
+
+def launch_reserved(root,c,platform,device,*,preprobed=False,emit=True):
     require(platform != "web" or c["profile"] == "mobile-web", "Web disabled")
     digest = fingerprint(root)
     receipt = work(root) / "runtime.json"
@@ -717,7 +830,34 @@ def launch(root, c, platform, device, *, preprobed=False, emit=True):
     return result
 
 
-def capture(root, platform, label, theme, viewport, settle=1.5, scenario=None):
+def capture_baseline(root,task,platform):
+    """Record the original candidate while it is actually launched, before edits."""
+    require(fingerprint(root)==task["baseline_digest"],"Cannot capture baseline after source edits")
+    target=work(root)/"baseline.json"
+    runtime=read_json(work(root)/"runtime.json")
+    if target.is_file():
+        try:
+            before=read_json(target)
+            image=root/".flutter-harness/previews"/task["baseline_digest"]/("baseline-"+platform+"-light.png")
+            meta=read_json(image.with_suffix(".json"))
+            if (before.get("branch")==task["branch"] and before.get("digest")==task["baseline_digest"]
+                and meta.get("target")==runtime["device"] and meta.get("sha256")==hashlib.sha256(image.read_bytes()).hexdigest()):
+                return before
+        except (OSError,ValueError,KeyError,Blocked):
+            pass
+    capture(root,platform,"baseline","light","390,844")
+    value={"branch":task["branch"],"digest":task["baseline_digest"],"label":"baseline","platform":platform}
+    atomic_json(target,value)
+    return value
+
+
+def capture(root, platform, label, theme, viewport, settle=1.5, scenario=None, *, fixture=None):
+    current=read_json(work(root)/"runtime.json")
+    with runtime_access(root,platform,current.get("device")):
+        return capture_reserved(root,platform,label,theme,viewport,settle,scenario,fixture=fixture)
+
+
+def capture_reserved(root,platform,label,theme,viewport,settle=1.5,scenario=None,*,fixture=None):
     require(re.fullmatch(r"[a-zA-Z0-9_-]+", label), "Invalid capture label")
     require(0.5 <= settle <= 5, "Settle must be between 0.5 and 5 seconds")
     current = read_json(work(root) / "runtime.json")
@@ -728,11 +868,13 @@ def capture(root, platform, label, theme, viewport, settle=1.5, scenario=None):
     directory = root / ".flutter-harness/previews" / digest
     directory.mkdir(parents=True, exist_ok=True)
     image = directory / (label + "-" + platform + "-" + theme + ".png")
+    scenario_hash = None
     if scenario:
         path = Path(scenario)
         require(not path.is_absolute() and ".." not in path.parts and
                 (root / path).is_file() and not (root / path).is_symlink(),
                 "Capture scenario must be a project-local file")
+        scenario_hash=hashlib.sha256((root/path).read_bytes()).hexdigest()
     with target_lock(platform, device):
         image.with_suffix(".json").unlink(missing_ok=True)
         image.unlink(missing_ok=True)
@@ -769,16 +911,17 @@ def capture(root, platform, label, theme, viewport, settle=1.5, scenario=None):
         data = image.read_bytes()
         size = png_size(data)
         require(fingerprint(root) == digest, "Stale capture")
+        require(not scenario or hashlib.sha256((root/scenario).read_bytes()).hexdigest()==scenario_hash,"Capture scenario changed during execution")
         require(read_json(work(root) / "runtime.json") == current, "Runtime target changed during capture")
         atomic_json(image.with_suffix(".json"), {"digest": digest, "label": label, "platform": platform,
                     "target": device, "theme": theme, "viewport": viewport if platform == "web" else None,
-                    "size": size, "scenario": scenario, "sha256": hashlib.sha256(data).hexdigest(),
+                    "size": size, "scenario": scenario, "scenario_sha256":scenario_hash, "fixture":fixture, "sha256": hashlib.sha256(data).hexdigest(),
                     "path": str(image)})
     event(root, "visual-captured", platform=platform, label=label, theme=theme, digest=digest)
     output(status="CAPTURED", path=str(image), digest=digest)
 
 
-def capture_plan(root,c):
+def capture_plan(root,c,refresh=()):
     """Execute an explicit, project-specific scripted plan, serially.
     No guessed taps, no destructive fixture creation, no model calls."""
     plan = read_json(work(root)/"visual-plan.json")
@@ -801,16 +944,33 @@ def capture_plan(root,c):
         require(platform!="web" or isinstance(item.get("viewport"),str) and re.fullmatch(r"\d+,\d+",item["viewport"]),
                 "Web batch scenario needs viewport")
     digest = fingerprint(root)
-    checked = read_json(work(root)/"check.json")
-    require(checked.get("status")=="PASS" and checked.get("digest")==digest,"Check exact candidate before capture-plan")
+    require(current_check(root,digest),"Check exact candidate before capture-plan")
     runtime = read_json(work(root)/"runtime.json")
     require(runtime.get("digest")==digest and runtime.get("platform")==platform,
             "Run launch auto for checked candidate before capture-plan")
+    require(set(refresh)<=labels,"Unknown capture label in --refresh")
+    assert_runtime_access(root,platform,runtime.get("device"))
     for item in items:
         for theme in ("light","dark"):
+            image=root/".flutter-harness/previews"/digest/(item["label"]+"-"+platform+"-"+theme+".png")
+            expected={"digest":digest,"label":item["label"],"platform":platform,"theme":theme,"target":runtime["device"],
+                      "viewport":item.get("viewport") if platform=="web" else None,"scenario":item["scenario"],
+                      "fixture":plan.get("fixture"),"scenario_sha256":hashlib.sha256((root/item["scenario"]).read_bytes()).hexdigest()}
+            if item["label"] not in refresh and reusable_capture(image,expected):
+                event(root,"visual-reused",platform=platform,label=item["label"],theme=theme,digest=digest)
+                continue
             capture(root,platform,item["label"],theme,item.get("viewport") or "390,844",
-                    scenario=item["scenario"])
+                    scenario=item["scenario"],fixture=plan.get("fixture"))
     visual_evidence(root,any(x["kind"]=="interaction" for x in items))
+
+
+def reusable_capture(image,expected):
+    try:
+        data=image.read_bytes()
+        meta=read_json(image.with_suffix(".json"))
+        return all(meta.get(k)==v for k,v in expected.items()) and meta.get("size")==png_size(data) and meta.get("sha256")==hashlib.sha256(data).hexdigest()
+    except (OSError,ValueError,KeyError,Blocked):
+        return False
 
 
 def visual_evidence(root, require_interaction=False, *, emit=True):
@@ -825,6 +985,10 @@ def visual_evidence(root, require_interaction=False, *, emit=True):
     require(platform in ("android", "ios", "web"), "Visual plan needs one representative platform")
     require(isinstance(plan.get("fixture"), str) and plan["fixture"].strip(), "Describe representative isolated fixture data")
     baseline = plan.get("baseline")
+    if baseline is None and (work(root)/"baseline.json").is_file():
+        before=read_json(work(root)/"baseline.json")
+        baseline={"digest":before["digest"],"label":before["label"]}
+        plan={**plan,"baseline":baseline}
     require(isinstance(baseline, dict), "Declare baseline digest/label or unavailable reason")
     preflight_path = work(root) / "visual-preflight.json"
     require(preflight_path.is_file(), "Run launch auto (or doctor visual) before runtime work")
@@ -870,6 +1034,10 @@ def visual_evidence(root, require_interaction=False, *, emit=True):
                     f"Stale or invalid capture: {path.name}")
             require("scenario" not in item or receipt.get("scenario")==item["scenario"],
                     "Capture scenario differs from planned state: "+path.name)
+            if item.get("scenario"):
+                scenario=Path(item["scenario"])
+                require(not scenario.is_absolute() and ".." not in scenario.parts and (root/scenario).is_file() and not (root/scenario).is_symlink(),"Invalid visual scenario")
+                require(receipt.get("scenario_sha256")==hashlib.sha256((root/scenario).read_bytes()).hexdigest(),"Capture scenario content changed: "+path.name)
             require(platform != "web" or item["kind"] != "interaction" or receipt.get("scenario"),
                     "Web interaction capture needs a Playwright scenario; a fresh-page screenshot is insufficient")
             targets.add(receipt["target"])
@@ -890,6 +1058,9 @@ def visual_evidence(root, require_interaction=False, *, emit=True):
         label = baseline.get("label")
         require(isinstance(before,str) and re.fullmatch(r"[0-9a-f]{64}",before) and before != digest and
                 isinstance(label,str) and re.fullmatch(r"[a-zA-Z0-9_-]+",label), "Invalid baseline candidate/label")
+        task = read_json(work(root)/"task.json")
+        require(task.get("branch")==preflight.get("branch") and task.get("baseline_digest")==before,
+                "Baseline must match the original candidate of this task; do not use another task\'s screenshot")
         image = root / ".flutter-harness/previews" / before / (label+"-"+platform+"-light.png")
         require(image.is_file() and image.with_suffix(".json").is_file(), "Missing comparable baseline capture receipt")
         meta = read_json(image.with_suffix(".json"))
@@ -912,6 +1083,12 @@ def visual_evidence(root, require_interaction=False, *, emit=True):
 
 
 def e2e(root, platform, scenario, device):
+    current=read_json(work(root)/"runtime.json")
+    with runtime_access(root,platform,current.get("device")):
+        return e2e_reserved(root,platform,scenario,device)
+
+
+def e2e_reserved(root,platform,scenario,device):
     path = Path(scenario)
     require(not path.is_absolute() and ".." not in path.parts and
             (root / path).is_file() and not (root / path).is_symlink(),
@@ -954,40 +1131,86 @@ def usage(root, sessions, *, emit=True):
         return summary
 
 
-def diagnostics(root, sessions):
-    """One safe, compact report; sanitized exports are temporary."""
-    summary = usage(root, sessions, emit=False)
-    data = {"harness":installed_revision(root,config(root)), "usage": summary, "artifacts": {}}
-    for name in ("check.json", "delivery-state.json", "delivery-result.json", "sessions.json", "runtime.json", "runtime-selection.json", "task.json"):
-        path = work(root) / name
-        if path.is_file():
-            data["artifacts"][name] = read_json(path)
-    path = work(root) / "lifecycle.jsonl"
+def diagnostics(root, sessions, *, local_only=False):
+    """Always retain local evidence; usage export is best effort."""
+    directory = work(root)
+    errors = []
+    data = {"harness":None,"usage":None,"artifacts":{}}
+    try:
+        data["harness"]=installed_revision(root,config(root))
+    except (OSError,ValueError,KeyError,Blocked,subprocess.TimeoutExpired) as exc:
+        data["harness"]={"status":"BLOCKED","error_type":type(exc).__name__}
+        errors.append("Harness revision unavailable or inconsistent")
     events = []
+    path=directory/"lifecycle.jsonl"
     if path.is_file():
         for line in path.read_text(encoding="utf-8").splitlines():
-            item = json.loads(line)
-            if item.get("session") in sessions or any(
-                    start <= item.get("at", 0) <= end
-                    for start, end in summary["session_windows"]):
-                events.append(item)
-    data["events"] = events
-    # Preserve the actual status/exit of each standard check, including failed runs.
-    reports = []
+            try:
+                item=json.loads(line)
+                if isinstance(item,dict):
+                    events.append(item)
+            except ValueError:
+                errors.append("Unreadable lifecycle entry skipped")
+    # Most recent task boundary if no explicit session or durable session list.
+    if not sessions:
+        start=next((i for i in range(len(events)-1,-1,-1) if events[i].get("stage")=="task-start"),None)
+        if start is not None:
+            events=events[start:]
+            sessions=list(dict.fromkeys(x.get("session") for x in events if isinstance(x.get("session"),str)))
+        else:
+            events=events[-100:]
+    else:
+        start=next((i for i,x in enumerate(events) if x.get("stage")=="task-start" and x.get("session") in sessions),None)
+        if start is not None:
+            end=next((i for i in range(start+1,len(events)) if events[i].get("stage")=="task-start" and events[i].get("session") not in sessions),len(events))
+            events=events[start:end]
+        else:
+            events=events[-100:]
+    for name in ("check.json","check-attempt.json","delivery-state.json","delivery-result.json","sessions.json",
+                 "runtime.json","runtime-selection.json","task.json","visual-preflight.json","baseline.json"):
+        candidate=directory/name
+        if candidate.is_file():
+            try:
+                data["artifacts"][name]=read_json(candidate)
+            except (OSError,ValueError,Blocked):
+                errors.append("Unreadable artifact: "+name)
+    # Report actual lock status, not a stale PID after a killed process.
+    directory.mkdir(parents=True,exist_ok=True)
+    with (directory/"check.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            data["check_running"]=False
+        except BlockingIOError:
+            data["check_running"]=True
+    data["events"]=events
+    reports=[]
     for item in events:
-        if item.get("stage") != "check-run":
+        if item.get("stage")!="check-run":
             continue
-        directory = (root / item.get("artifacts","")).resolve()
-        if work(root).resolve() not in directory.parents:
+        run_dir=(root/item.get("artifacts","")).resolve()
+        if directory.resolve() not in run_dir.parents:
             continue
-        for path in directory.glob("check-*.tsv"):
-            with path.open(encoding="utf-8") as stream:
-                reports.append({"report":str(path.relative_to(root)), "checks":list(csv.DictReader(stream,delimiter="\t"))})
-    data["standard_runs"] = reports
-    target = work(root) / "diagnostics.json"
-    atomic_json(target, data)
-    output(status="PASS", report=str(target))
-
+        for path in run_dir.glob("check-*.tsv"):
+            try:
+                with path.open(encoding="utf-8") as stream:
+                    reports.append({"report":str(path.relative_to(root)),"checks":list(csv.DictReader(stream,delimiter="\t"))})
+            except OSError:
+                errors.append("Unreadable standard report")
+    data["standard_runs"]=reports
+    data["errors"]=errors
+    target=directory/"diagnostics.json"
+    # Persist immediately, even if the session exporter subsequently hangs.
+    data["usage_status"]="NOT_REQUESTED" if local_only else "PENDING" if sessions else "UNAVAILABLE"
+    atomic_json(target,data)
+    if sessions and not local_only:
+        try:
+            data["usage"]=usage(root,sessions,emit=False)
+            data["usage_status"]="PASS"
+        except (OSError,ValueError,KeyError,Blocked,subprocess.TimeoutExpired) as exc:
+            data["usage_status"]="UNAVAILABLE"
+            errors.append("Sanitized OpenCode export unavailable: "+type(exc).__name__)
+    atomic_json(target,data)
+    output(status="PASS",report=str(target),usage_status=data["usage_status"])
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1002,7 +1225,8 @@ def main():
     p.add_argument("branch")
     for cmd in ("check","ci","deliver","verify","completion","status","fingerprint","stop-preview","adopt"):
         sub.add_parser(cmd)
-    sub.add_parser("capture-plan")
+    p = sub.add_parser("capture-plan")
+    p.add_argument("--refresh",action="append",default=[],help="Recapture both themes of an explicitly changed UI state")
     sub.add_parser("validate-delivery")
     p = sub.add_parser("prepare-delivery")
     p.add_argument("--message", required=True)
@@ -1036,12 +1260,23 @@ def main():
     for cmd in ("usage", "diagnostics"):
         p = sub.add_parser(cmd)
         p.add_argument("sessions", nargs="*")
+        if cmd=="diagnostics":
+            p.add_argument("--local",action="store_true",help="Write local evidence without waiting for OpenCode export")
     a = parser.parse_args()
     root = a.project.resolve()
     try:
         require((root / "pubspec.yaml").is_file(), "Expected Flutter project")
         if a.command == "fingerprint":
             print(fingerprint(root))
+            return 0
+        if a.command=="diagnostics":
+            sessions=a.sessions
+            if not sessions:
+                try:
+                    sessions=read_json(work(root)/"sessions.json").get("sessions",[])
+                except (OSError,ValueError,Blocked):
+                    sessions=[]
+            diagnostics(root,sessions,local_only=a.local)
             return 0
         c = config(root)
         if a.command == "revision":
@@ -1072,7 +1307,8 @@ def main():
             digest = fingerprint(root)
             output(branch=text(git(root,"branch","--show-current")),
                    base=c["integration_branch"], revision=c.get("revision"), changed=dirty(root), digest=digest,
-                   checked=receipt.exists() and read_json(receipt).get("digest")==digest)
+                   workspace=workspace_assignment(root),
+                   checked=current_check(root,digest))
         elif a.command == "scaffold":
             scaffold(root, a.name, a.layers)
         elif a.command == "adopt":
@@ -1080,7 +1316,7 @@ def main():
         elif a.command == "launch":
             if a.platform == "auto":
                 require(a.device is None,"Use HARNESS_IOS_DEVICE/HARNESS_ANDROID_DEVICE for preference")
-                launch_auto(root,c,a.only,a.fresh)
+                launch_auto(root,c,a.only,a.fresh,baseline=True)
             else:
                 require(a.only is None and not a.fresh,"--only and --fresh are for launch auto")
                 launch(root,c,a.platform,a.device)
@@ -1090,7 +1326,7 @@ def main():
             delivery_manifest(root,c)
             output(status="PASS")
         elif a.command == "capture-plan":
-            capture_plan(root,c)
+            capture_plan(root,c,a.refresh)
         elif a.command == "capture":
             capture(root, a.platform, a.label, a.theme, a.viewport, a.settle, a.scenario)
         elif a.command == "visual-evidence":
@@ -1099,13 +1335,10 @@ def main():
             run(root, sys.executable, str(HERE / "web-preview.py"), "stop")
         elif a.command == "e2e":
             e2e(root, a.platform, a.scenario, a.device)
-        elif a.command in ("usage", "diagnostics"):
+        elif a.command == "usage":
             sessions = a.sessions or read_json(work(root)/"sessions.json")["sessions"]
             require(sessions, "No recorded sessions")
-            if a.command == "diagnostics":
-                diagnostics(root, sessions)
-            else:
-                usage(root, sessions)
+            usage(root, sessions)
         return 0
     except (Blocked, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
         if a.command in ("begin", "check", "deliver", "doctor", "launch", "capture", "capture-plan", "prepare-delivery", "validate-delivery", "visual-evidence", "e2e"):

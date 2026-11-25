@@ -13,7 +13,11 @@ import { registerResourceGuard } from "./resources.mjs";
 export default Plugin.define({
   id: "flutter-harness-delivery",
   async setup(ctx) {
-    const root = ctx.location.project?.directory || ctx.location.project?.canonical || ctx.location.directory;
+    const location = ctx.location.directory;
+    if (!location) throw Error("Harness requires an explicit OpenCode working directory");
+    const root = (await exec("git",["rev-parse","--show-toplevel"],{cwd:location,timeout:15000})).stdout.trim();
+    const expected=process.env.HARNESS_WORKSPACE_ROOT;
+    if (expected && root!==expected) throw Error("OpenCode location differs from assigned Harness worktree: "+expected);
     const config = JSON.parse(await readFile(join(root, ".flutter-harness/config.json"), "utf8"));
     if (config.schema !== 2 || typeof config.integration_branch !== "string" || !config.integration_branch) throw Error("Harness schema 2 configuration required");
     const base = config.integration_branch;
@@ -36,7 +40,12 @@ export default Plugin.define({
     }
     let quality;
     const resources = await registerResourceGuard(ctx, key, id=>quality.inputs(id), (event,input)=>quality.prepareReview(event,input),record);
-    quality = await registerQualityGate(ctx, root, "origin/" + base, key, undefined, resources.status, true, resources.reviewAvailability);
+    quality = await registerQualityGate(ctx, root, "origin/" + base, key, undefined, resources.status, true, resources.reviewAvailability, undefined, async()=>{
+      try {
+        const {stdout}=await exec("python3",[join(root,".flutter-harness/bin/harness.py"),"status"],{cwd:root,timeout:15000});
+        return JSON.parse(stdout).checked===true;
+      } catch { return false; }
+    });
     await ctx.session.hook("prompt", async (event) => {
       const session = await ctx.session.get({ sessionID: event.sessionID });
       if (session.parentID) return;
@@ -50,9 +59,11 @@ export default Plugin.define({
         intent: taskIntent(event.prompt?.text),
         request: event.prompt?.text || "",
         baseline: await snapshot(root),
+        startedAt:Date.now(),
         attempts: 0,
       });
       await record(event.sessionID, "task-start");
+      await saveSessions(event.sessionID);
     });
     await ctx.session.hook("experimental.idle", async (event) => {
       const id = event.sessionID;
@@ -61,6 +72,16 @@ export default Plugin.define({
       if (event.background?.some(work => work.sessionID === id)) return;
       await assertRevision();
       const result = await inspect(root, base, state.baseline, state.intent);
+      const events=(await readFile(join(directory,"lifecycle.jsonl"),"utf8")).split("\n").flatMap(line=>{try{return [JSON.parse(line)]}catch{return []}});
+      const begin=events.filter(e=>e.at>=state.startedAt && ["begin","begin-blocked"].includes(e.stage)).at(-1);
+      if (begin?.stage==="begin-blocked" && /different Harness revision|Dirty checkout|Unsafe feature branch/.test(begin.reason || "")) {
+        await saveSessions(id);
+        await record(id,"task-incomplete",{phase:"prerequisite",reason:begin.reason});
+        await ctx.storage.remove(key(id));
+        await quality.clear(id);
+        await resources.clear(id);
+        return;
+      }
       const evidence = result.active ? await quality.status(id) : { issue: "", phase: "work" };
       if (!result.active || (result.passed && !evidence.issue)) {
         if (result.active) {
