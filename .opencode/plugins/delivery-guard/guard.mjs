@@ -70,7 +70,7 @@ export function recovery(state, result, quality) {
     : quality.phase === "visual"
       ? "Complete the missing planned runtime evidence on the chosen working platform. Reuse current standard checks. Do not dispatch a reviewer until visual-evidence passes."
     : quality.phase === "review"
-      ? "Reuse the successful standard evidence for the unchanged candidate. Inspect any prior reviewer result; fix material findings and recheck only as needed. Use the permitted independent review only on changed inputs; do not retry an exhausted budget."
+      ? "Reuse the successful standard evidence for the unchanged candidate. Inspect the actual prior reviewer findings; fix confirmed defects. If a finding contradicts exact diff/evidence, one unchanged-input adjudication is allowed. Do not change source merely to obtain a new review key; do not retry an exhausted budget."
       : quality.check === "passed"
         ? "The candidate is checked. If acceptance is complete, prepare delivery.json only if missing and invoke exactly python3 .flutter-harness/bin/harness.py deliver with owner approval. The CLI reconciles remote state and writes the receipt; do not run separate Git/PR probes, and do not repeat builds, tests or reviews."
         : "Resume the unfinished implementation or plan from current files. Run focused checks on missing behavior, then the required final check; do not publish incomplete work.";
