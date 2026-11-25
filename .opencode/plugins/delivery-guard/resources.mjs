@@ -1,6 +1,8 @@
+import { reviewVerdict } from "./quality.mjs";
+
 // Bound actual child dispatches, not model tokens. Use OpenCode session
 // outcome as execution evidence; a worker's text is not completion.
-export async function registerResourceGuard(ctx, taskKey) {
+export async function registerResourceGuard(ctx, taskKey, reviewInputs, prepareReview) {
   const key = id => "resources/" + id;
   const queues = new Map();
   async function locked(id, fn) {
@@ -30,6 +32,33 @@ export async function registerResourceGuard(ctx, taskKey) {
       return "";
     });
   }
+  async function budget(id, state, key) {
+    const attempts = state.reviews || [];
+    if ((state.pending || []).some(x=>x.role==="reviewer") ||
+        (await running(id,state)).some(x=>x.role==="reviewer")) return "Wait for the actual reviewer outcome.";
+    if (attempts.length >= 3) return "Harness: reviewer absolute attempt budget exhausted.";
+    const outcomes = [];
+    for (const attempt of attempts) {
+      if (!attempt.childID) { outcomes.push("ERROR"); continue; }
+      const child = await ctx.session.get({sessionID:attempt.childID});
+      if (child.parentID !== id) throw Error("Unexpected reviewer ownership");
+      outcomes.push(child.outcome === "succeeded" ?
+        reviewVerdict(await ctx.session.context({sessionID:attempt.childID})) : "ERROR");
+    }
+    const last = attempts.at(-1);
+    const lastOutcome = outcomes.at(-1);
+    if (attempts.some(x=>x.key===key) && !(last?.key===key && lastOutcome==="ERROR")) return "Harness: reviewer input unchanged; fix the findings or complete missing evidence before re-review.";
+    if (outcomes.filter(x=>x==="PASS" || x==="CHANGES_REQUIRED").length >= 2)
+      return "Harness: substantive reviewer attempt budget exhausted.";
+    if (attempts.length >= 2 && !outcomes.some(x=>x==="BLOCKED" || x==="ERROR"))
+      return "Harness: reviewer attempt budget exhausted.";
+    if (outcomes.filter(x=>x==="BLOCKED" || x==="ERROR").length >= 2)
+      return "Harness: technical reviewer recovery budget exhausted.";
+    return "";
+  }
+  async function reviewAvailability(id, key) {
+    return locked(id, async()=>budget(id,await read(id),key));
+  }
   await ctx.tool.hook("execute.before", async event => {
     if (event.tool !== "subagent") return;
     const role = event.input?.agent;
@@ -46,13 +75,21 @@ export async function registerResourceGuard(ctx, taskKey) {
       const pending = state.pending || [];
       if (role === "worker" && active.filter(x=>x.role==="worker").length + pending.filter(x=>x.role==="worker").length >= 2)
         throw Error("Harness: at most two active workers.");
-      if (role === "advisor" || role === "reviewer") {
-        const limit = role === "advisor" ? 1 : 2;
-        if ((state[role] || 0) >= limit) throw Error("Harness: " + role + " attempt budget exhausted.");
-        state[role] = (state[role] || 0) + 1;
+      if (role === "advisor") {
+        if ((state.advisor || 0) >= 1) throw Error("Harness: advisor attempt budget exhausted.");
+        state.advisor = (state.advisor || 0) + 1;
+      }
+      if (typeof event.id !== "string" || !event.id) throw Error("Missing child dispatch identifier");
+      if (role === "reviewer") {
+        // Admission before spending a dispatch. Inputs include actual check
+        // state, current source and required visual evidence.
+        const input = await reviewInputs(id);
+        const why = await budget(id,state,input.key);
+        if (why) throw Error(why);
+        await prepareReview(event,input);
+        state.reviews = [...(state.reviews || []),{call:event.id,key:input.key}];
       }
       if (role === "advisor") event.input = {...event.input, model:"openai/gpt-6.2-sol#medium"};
-      if (typeof event.id !== "string" || !event.id) throw Error("Missing child dispatch identifier");
       state.pending = [...pending,{call:event.id,role}];
       await ctx.storage.set(key(id),state);
     });
@@ -68,6 +105,7 @@ export async function registerResourceGuard(ctx, taskKey) {
       // A completed dispatch without a session ID cannot prove completion.
       if (event.status === "completed" && !childID) return;
       state.pending = state.pending.filter(x=>x.call!==event.id);
+      if (pending.role === "reviewer") state.reviews = (state.reviews || []).map(x=>x.call===event.id?{...x,childID}:x);
       if (typeof childID === "string" && childID && !(state.children || []).some(x=>x.id===childID)) {
         state.children = [...(state.children || []),{id:childID,role:pending.role}];
       }
@@ -75,7 +113,7 @@ export async function registerResourceGuard(ctx, taskKey) {
     });
   });
   return {
-    status,
+    status, reviewAvailability,
     sessions: async id => [id,...(await read(id)).children.map(x=>x.id)],
     clear: id => locked(id, () => ctx.storage.remove(key(id)))
   };

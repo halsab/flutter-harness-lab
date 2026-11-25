@@ -14,7 +14,7 @@ async function command(root, bin, args) {
   }
 }
 export function taskIntent(text) {
-  return /(?:\b(?:add|implement|fix|create|build|update|refactor|finish|continue)\b|улучш|добав|реализ|исправ|созда|разработ|доработ|переимен|измени|внеси|заверш|доведи|продолжи)/i.test(text || "");
+  return /(?:\b(?:add|implement|fix|create|build|update|refactor|finish|continue)\b|переработ|передел|улучш|добав|реализ|исправ|созда|разработ|доработ|переимен|измени|внеси|заверш|доведи|продолжи)/i.test(text || "");
 }
 export function changed(a, b) {
   return a.head !== b.head || a.branch !== b.branch || a.status !== b.status || a.digest !== b.digest;
@@ -58,15 +58,17 @@ export async function inspect(root, base, before, intent) {
 // The first retry is allowed; a second needs a material change in evidence.
 export function recovery(state, result, quality) {
   const reasons = [...result.reasons, quality.issue].filter(Boolean);
-  const fingerprint = JSON.stringify([result.current, quality.digest, quality.check, quality.phase, reasons]);
+  const fingerprint = JSON.stringify([result.current, quality.digest, quality.visualDigest, quality.check, quality.phase, reasons]);
   const reason = reasons.join("; ");
-  if (state.attempts >= 2 || (state.attempts > 0 && state.lastRecovery === fingerprint)) {
+  if (quality.phase === "blocked" || state.attempts >= 2 || (state.attempts > 0 && state.lastRecovery === fingerprint)) {
     return { stop: true, reason, fingerprint };
   }
   const step = quality.phase === "check"
     ? "Diagnose the earliest failed or missing required check. Inspect its actual error, make a focused fix, run the affected check then standard once. Do not ask for push approval before checks pass."
+    : quality.phase === "visual"
+      ? "Complete the missing planned runtime evidence on the chosen working platform. Reuse current standard checks. Do not dispatch a reviewer until visual-evidence passes."
     : quality.phase === "review"
-      ? "Reuse the successful standard evidence for the unchanged candidate. Inspect any prior reviewer result; fix material findings and recheck only as needed. Use the remaining allowed independent review attempt, not a duplicate review loop."
+      ? "Reuse the successful standard evidence for the unchanged candidate. Inspect any prior reviewer result; fix material findings and recheck only as needed. Use the permitted independent review only on changed inputs; do not retry an exhausted budget."
       : quality.check === "passed"
         ? "The candidate is checked. If acceptance is complete, prepare delivery.json only if missing and invoke exactly python3 .flutter-harness/bin/harness.py deliver with owner approval. The CLI reconciles remote state and writes the receipt; do not run separate Git/PR probes, and do not repeat builds, tests or reviews."
         : "Resume the unfinished implementation or plan from current files. Run focused checks on missing behavior, then the required final check; do not publish incomplete work.";

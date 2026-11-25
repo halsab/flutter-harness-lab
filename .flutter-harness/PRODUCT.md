@@ -74,7 +74,7 @@ Do not implement a second Cupertino visual tree, introduce platform-specific
 UI wrappers, or imitate UIKit interactions just because the device is iOS.
 Keep Flutter's normal platform behavior (navigation, text editing, keyboard,
 scroll physics, accessibility) and adapt layout to width and input method.
-Use stock Material controls and interactions first; custom visual direction
+Use stock Material controls and interactions first; follow the Material 3 component-selection and visible-state rules in DESIGN.md as project defaults, not optional user prompt requirements. In particular, fixed small exclusive display modes use SegmentedButton when suitable; independent filters use FilterChip; secondary search uses progressive disclosure; active sort/filter/query stays understandable without opening a menu. Custom visual direction
 builds on Material and the same design system (ui_profile: custom, when
 explicitly requested). No optional second component kit by default.
 Only universal and explicitly requested custom Material profiles are valid.
@@ -135,7 +135,7 @@ architecture and UX, not three separate agents. If runtime visual review is
 unavailable, say BLOCKED for required visual acceptance, do not claim PASS.
 A screenshot is semantic review evidence, not an executable functional test.
 No routine visual/E2E checks for non-visual changes, no golden auto-approval.
-For material visual tasks the same reviewer reports an explicit VISUAL: PASS
+Required planned runtime evidence must pass the CLI before reviewer dispatch. Missing evidence is BLOCKED, not a product defect. For material visual tasks the same reviewer reports an explicit VISUAL: PASS
 before VERDICT: PASS only after opening actual runtime images and comparing
 them to the user job and baseline/target. Owner makes final aesthetic acceptance.
 

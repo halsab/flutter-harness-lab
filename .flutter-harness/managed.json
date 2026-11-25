@@ -1,21 +1,21 @@
 {
   "schema": 2,
-  "revision": "415772f39b9c98e563f8f07b3603bbc6924d20b3",
+  "revision": "3d95a479901a12997b2131e6c8fc801fbd39d6c9",
   "files": {
-    ".flutter-harness/PRODUCT.md": "be5e2e703230a5edb28c0d85fe94a4443d13032a5ea4352793aa3186da2ce313",
+    ".flutter-harness/PRODUCT.md": "062f4176f63cdcb815bb6c6c5498b642b6c881f15d2671a8445481a9691e70dc",
     ".flutter-harness/bin/check-product.py": "78057b22f5d477c4a525c0622fd956a1c476563013f49103132baa585dad4b1d",
     ".flutter-harness/bin/check.sh": "ac28e9e55cee5870f234bc6964a4793f63c8fc651c5c5a254be2b09163c3fec1",
-    ".flutter-harness/bin/harness.py": "5d649faed9e07dd58b742e70ed985ea90c8a3019ea774abba1e4b447b5dbb750",
+    ".flutter-harness/bin/harness.py": "bd35e8c3da08e8293549a9c15852760f1612199cf0f10e162bde9b4c591b0a54",
     ".flutter-harness/bin/init-product.py": "99eb198579e277c2e571c76b2ee671ffe8514807da0064cfea0fef06656e9cd0",
     ".flutter-harness/bin/maestro.sh": "e9e4e10762bbc821440fdbe5703db23add0b78125502b6ef8721813a449c9220",
     ".flutter-harness/bin/session-usage.py": "85da4b17e8f3d1a50257ac7d673a577e3769b674a6a12423513cad69f6233031",
     ".flutter-harness/bin/task-plan.py": "8a4477b8bc8cc3c1110711d2a73cc188214ca1a661018841487a17119cad6c26",
     ".flutter-harness/bin/validate-opencode.py": "b82d917bab0581283873d4dea2e47fab3c5903963ef68c7420b8d19124982ec7",
-    ".flutter-harness/bin/web-preview.py": "aa6c28ec5990b2b47bc0427c69af617e97cf9d1b2c8d24ef77aea53346489838",
-    ".flutter-harness/config.json": "42608ec9490f3b5f8b78fef8e93b7abdd97a733bc7f1813cdae5122368e09892",
+    ".flutter-harness/bin/web-preview.py": "0825e30f5c96bcb4eb2f1544c26b3cae63c5ed94384e78762ce2dd8550b73f42",
+    ".flutter-harness/config.json": "96647d891113432c2003216f0b61877ff50284d36f67b4b10125a97225b6f256",
     ".flutter-harness/templates/product/BEHAVIOR.md": "e4afa7445ec7147c4c25632e96d819601d5cbd9d9b3407904103a099f29bab86",
-    ".flutter-harness/templates/product/DESIGN.md": "a1a3d2f5fb636d47c7cc91ba8bfa2f67fd767d81314cccb98762dc4832c4b35b",
-    ".flutter-harness/templates/product/ORCHESTRATION.md": "320bd2dee9637dc1c02ab6627cc060f4924a4c2c2ab5e87af83afadfc59cbd5c",
+    ".flutter-harness/templates/product/DESIGN.md": "291caa8f4ab321be7e9d249e1b497b814a00a6861c09d358751fd2c0b03df5a8",
+    ".flutter-harness/templates/product/ORCHESTRATION.md": "3e2d88a5296a80aa7e553c32117da62b3231ef7843e2eccc8c12615d773eb1a0",
     ".flutter-harness/templates/product/README.md": "a4df4d4c7322335b38beb5f0c24130148c24ac8f37320002ba5f831d364b0e4c",
     ".flutter-harness/templates/product/lib/app/app.dart.template": "15063fe45a6100e306bc50e82bcef0702031ebc5e3e5ffc9fa3adcd34715c0ba",
     ".flutter-harness/templates/product/lib/app/bootstrap.dart.template": "e90a6dd893bc91e75a11498db7d98eeea6e5ae8e1f05e014600254c99c55a08c",
@@ -31,11 +31,11 @@
     ".flutter-harness/templates/product/scaffold/view_model.dart.template": "5ef6b1221949fb51dc22c0f4c063f06782f52b19cfba5aa77c95369cf8fa32a7",
     ".flutter-harness/templates/product/smoke_test.dart.template": "2d4523e3ece6d15cb64fcbd58a5d28dd07d28a28c8951335c1d3a60c2fb7d81c",
     ".github/workflows/flutter.yml": "52dda8691f3299b2558541f1df5291ff726518a147287481050068443cdb1ddc",
-    ".opencode/plugins/delivery-guard/guard.mjs": "62e8166ce0d3abcacec9e835893e36667f76d08f9d74e2fb144c38ba96ae12a8",
-    ".opencode/plugins/delivery-guard/index.js": "9d8a95609b902f97908abab1362b57c34f06c32cf6f17965643e463352b7c6a5",
-    ".opencode/plugins/delivery-guard/quality.mjs": "76b95e4ec0d423d1ed1d584efd4a44984925ab4c88253b2aab1e46cb93594978",
-    ".opencode/plugins/delivery-guard/resources.mjs": "2841626a13b72068adce719f6958e2de450a460b664bd469664a24d45563ca5f",
-    "opencode.jsonc": "50502fcb6a759dfb641ae2c8fcbf604f9d7bbce0b2b66f184019a3f73b4e406c"
+    ".opencode/plugins/delivery-guard/guard.mjs": "7e77be4c70eca967e78af23434152f560600b68ff4e41c77c75b844d4395760c",
+    ".opencode/plugins/delivery-guard/index.js": "72da969e446947252a7fa332e57354d382fd98a8840772209509c890edb90b59",
+    ".opencode/plugins/delivery-guard/quality.mjs": "5e1af943c10e5963b7d51e91e255d050544c4e1b2b291d29c80286d507db89af",
+    ".opencode/plugins/delivery-guard/resources.mjs": "6c2f9a1f9760fae97a463fd27ad90b50e2374b8a3c9e06b331b334fd55ce8046",
+    "opencode.jsonc": "feeee4289e4520d9c542962bd76e7eaea1ffc0c3ad0e2fcdc79b2d4c167e13de"
   },
-  "agents_block": "d73da67c7e927ed77488c7658414629a48d99ab3d0c25a20406ab31c20f22b4b"
+  "agents_block": "0bd57e50f460342a18ddb9ce6d2f7efe53075c6f55fa9b9bee8f03b8d8dd5468"
 }
