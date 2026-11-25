@@ -28,6 +28,11 @@ Future<void> _openBulkDelete(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _openSearch(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Поиск задач'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   late TaskRepository repository;
 
@@ -141,6 +146,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: deleteRepository));
     await tester.pumpAndSettle();
 
+    await _openSearch(tester);
     await tester.enterText(
       find.bySemanticsIdentifier('task-search'),
       'Matching',
@@ -204,6 +210,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: searchRepository));
     await tester.pumpAndSettle();
 
+    await _openSearch(tester);
     final search = find.bySemanticsIdentifier('task-search');
     await tester.enterText(search, 'milk');
     await tester.pump();
@@ -243,6 +250,7 @@ void main() {
       await tester.pumpWidget(MyApp(repository: searchRepository));
       await tester.pumpAndSettle();
 
+      await _openSearch(tester);
       final search = find.bySemanticsIdentifier('task-search');
       await tester.enterText(search, '  MEETING   prepare  ');
       await tester.pump();
@@ -296,6 +304,7 @@ void main() {
     expect(top('zebra'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('apple')));
 
+    await _openSearch(tester);
     await tester.enterText(find.bySemanticsIdentifier('task-search'), 'a');
     await tester.tap(find.text('Активные'));
     await tester.pumpAndSettle();
