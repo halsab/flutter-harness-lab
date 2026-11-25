@@ -156,14 +156,20 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     if (!task?.active) return null;
     const state = await readState(id);
     const change = await candidate(root, base, task.request || "", state.failedNames || []);
+    let interaction = explicitVisualRequest(task.request || "");
     try {
       const manifest = JSON.parse(await readFile(join(root, ".flutter-harness/work/delivery.json"),"utf8"));
+      if (manifest.visual_required === true || manifest.visual_interaction === true) {
+        if (!change.reasons.includes(visualRisk)) change.reasons.push(visualRisk);
+        change.effort = reviewEffort(change.size, change.reasons);
+        interaction ||= manifest.visual_interaction === true;
+      }
       if (manifest.review_required === true && !change.reasons.length) {
         change.reasons.push("semantic or owner-requested independent review");
         change.effort = reviewEffort(change.size, change.reasons);
       }
     } catch (err) { if (err.code !== "ENOENT") throw err; }
-    return { task, state, change };
+    return { task, state, change, interaction };
   }
   async function approved(id, state, change, visualDigest = "") {
     if (!state.review || state.review.digest !== change.digest || (state.review.visualDigest || "") !== visualDigest) return false;
@@ -177,7 +183,7 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     if (!v) throw Error("No active task for review");
     if (v.state.passedDigest !== v.change.digest) throw Error("Complete standard check for this exact candidate before review");
     const visual = v.change.reasons.includes(visualRisk)
-      ? await verifyVisual(explicitVisualRequest(v.task.request || "")) : null;
+      ? await verifyVisual(v.interaction) : null;
     if (visual && !visual.evidence_digest) throw Error("Missing visual evidence digest");
     return {v, visual, key: JSON.stringify([v.change.digest, visual?.evidence_digest || ""])};
   }
@@ -193,7 +199,7 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     let visual = null;
     if (v.change.reasons.includes(visualRisk)) {
       try {
-        visual = await verifyVisual(explicitVisualRequest(v.task.request || ""));
+        visual = await verifyVisual(v.interaction);
         if (!visual?.evidence_digest) throw Error("Missing visual evidence digest");
         result.visualDigest = visual.evidence_digest;
       } catch (err) {
