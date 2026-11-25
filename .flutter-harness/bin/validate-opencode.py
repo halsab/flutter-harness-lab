@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import fnmatch
 import sys
 from pathlib import Path
 
@@ -23,7 +24,12 @@ ROLES = {
 }
 REQUIRED_SAFETY = {
     ("external_directory", "*", "ask"),
-    ("shell", "git push *", "ask"),
+    ("shell", "git push *", "deny"),
+    ("shell", "gh pr create *", "deny"),
+    ("shell", "gh pr ready *", "deny"),
+    ("shell", "gh pr edit *", "deny"),
+    ("shell", "python3 .flutter-harness/bin/harness.py deliver", "ask"),
+    ("skill", "*", "deny"),
     ("shell", "git push --force*", "deny"),
     ("shell", "git push -f *", "deny"),
     ("shell", "gh pr merge *", "deny"),
@@ -100,6 +106,13 @@ def validate(filename, profile):
     ensure("OPEN" in agents["reviewer"].get("description", ""), "reviewer must report incomplete coverage as OPEN")
 
     ensure(REQUIRED_SAFETY <= ruleset(data.get("permissions")), "missing safety permissions")
+    for action, resource, expected in REQUIRED_SAFETY:
+        if "*" in resource:
+            probe = resource.replace("*", "sample")
+        else:
+            probe = resource
+        effective = [r["effect"] for r in data["permissions"] if fnmatch.fnmatchcase(action, r["action"]) and fnmatch.fnmatchcase(probe, r["resource"])]
+        ensure(effective and effective[-1] == expected, f"unsafe effective permission: {action} {probe}")
     disabled_skills = {("skill", name, "deny") for name in DISABLED_INTERACTIVE_SKILLS}
     ensure(
         disabled_skills <= ruleset(data.get("permissions")),
@@ -118,6 +131,7 @@ def validate(filename, profile):
     if profile == "mobile-web":
         expected |= {"playwright", "chrome-devtools"}
     ensure(set(servers) == expected, f"{profile} MCP servers must be {sorted(expected)}")
+    ensure(all(server.get("disabled") is True for server in servers.values()), "MCP must be off in default templates")
     if profile == "mobile-web":
         ensure(
             servers["chrome-devtools"].get("disabled") is True,

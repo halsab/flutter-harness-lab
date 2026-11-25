@@ -1,71 +1,23 @@
-name: Flutter Lab
-
+name: Flutter product
 on:
   push:
-    branches: [main, app]
+    branches: ["app"]
   pull_request:
-
 permissions:
   contents: read
-
 concurrency:
-  group: lab-${{ github.workflow }}-${{ github.ref }}
+  group: flutter-product-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.50.1'
           channel: stable
           cache: true
-      - name: Validate OpenCode routing and permissions
-        run: python3 .flutter-harness/bin/validate-opencode.py opencode.jsonc mobile-web
-      - name: Check installed Harness scripts
-        run: |
-          for script in .flutter-harness/bin/maestro.sh .flutter-harness/bin/check.sh .flutter-harness/bin/verify-pr.sh; do
-            bash -n "$script"
-          done
-      - name: Verify local E2E helper syntax and presence
-        run: |
-          python3 - <<'PY'
-          import ast
-          from pathlib import Path
-          for name in ('web-preview.py', 'verify-e2e.py', 'task-plan.py', 'session-usage.py', 'validate-opencode.py'):
-              source = Path('.flutter-harness/bin', name)
-              ast.parse(source.read_text(encoding='utf-8'), filename=str(source))
-          print('PASS local E2E helper syntax')
-          PY
-      - name: Validate OpenCode V2 delivery guard files
-        run: |
-          test -f .opencode/plugins/delivery-guard/index.js
-          test -f .opencode/plugins/delivery-guard/guard.mjs
-          node --check .opencode/plugins/delivery-guard/index.js
-          node --check .opencode/plugins/delivery-guard/guard.mjs
-          test -f .opencode/plugins/delivery-guard/quality.mjs
-          node --check .opencode/plugins/delivery-guard/quality.mjs
-          node --check .opencode/plugins/delivery-guard/resources.mjs
-          test -f .flutter-harness/templates/product/BEHAVIOR.md
-          test -f .flutter-harness/templates/product/DESIGN.md
-          test -f .flutter-harness/templates/product/ORCHESTRATION.md
-      - name: Check product architecture and design-system conventions
-        env:
-          PRODUCT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python3 .flutter-harness/bin/check-product.py . --base "$PRODUCT_BASE"
-      - run: flutter pub get
-      - name: Check Dart formatting
-        id: dart_format
-        run: dart format --output=none --set-exit-if-changed lib test
-      - name: Show required formatting diff
-        if: failure() && steps.dart_format.outcome == 'failure'
-        run: |
-          dart format lib test
-          git diff -- lib test
-      - run: flutter analyze
-      - run: flutter test
+      - name: Verify installed runtime and product
+        run: python3 .flutter-harness/bin/harness.py ci

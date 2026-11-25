@@ -53,3 +53,4 @@ app.*.map.json
 
 /.flutter-harness/previews/
 /.flutter-harness/work/
+/.playwright/
