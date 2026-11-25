@@ -18,6 +18,8 @@ class TaskListScreen extends StatefulWidget {
 class _TaskListScreenState extends State<TaskListScreen> {
   final _inputController = TextEditingController();
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  bool _searchOpen = false;
   TaskListViewModel get _model => widget.viewModel;
 
   @override
@@ -29,11 +31,24 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   void _onModelChanged() => setState(() {});
 
+  void _openSearch() {
+    setState(() => _searchOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusScope.of(context).requestFocus(_searchFocusNode);
+    });
+  }
+
+  void _closeSearch() {
+    _searchFocusNode.unfocus();
+    setState(() => _searchOpen = false);
+  }
+
   @override
   void dispose() {
     _model.removeListener(_onModelChanged);
     _inputController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -121,6 +136,17 @@ class _TaskListScreenState extends State<TaskListScreen> {
           const SizedBox(width: AppTokens.space8),
         ],
       ),
+      floatingActionButton: FloatingActionButton.small(
+        tooltip: _searchOpen ? 'Закрыть поиск' : 'Поиск задач',
+        onPressed: () {
+          if (_searchOpen) {
+            _closeSearch();
+          } else {
+            _openSearch();
+          }
+        },
+        child: Icon(_searchOpen ? Icons.close : Icons.search),
+      ),
       body: SafeArea(
         child: Align(
           alignment: Alignment.topCenter,
@@ -175,35 +201,60 @@ class _TaskListScreenState extends State<TaskListScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: AppTokens.space12),
-                        Semantics(
-                          identifier: 'task-search',
-                          child: TextField(
-                            controller: _searchController,
-                            textInputAction: TextInputAction.search,
-                            onChanged: _model.setSearchQuery,
-                            decoration: InputDecoration(
-                              hintText: 'Поиск задач',
-                              prefixIcon: const Icon(Icons.search),
-                              suffixIcon: _model.searchQuery.isEmpty
-                                  ? null
-                                  : IconButton(
-                                      tooltip: 'Очистить поиск',
-                                      onPressed: () {
-                                        _searchController.clear();
-                                        _model.setSearchQuery('');
-                                      },
-                                      icon: const Icon(Icons.close),
-                                    ),
-                              isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppTokens.radius,
+                        if (_searchOpen) ...[
+                          const SizedBox(height: AppTokens.space12),
+                          Semantics(
+                            identifier: 'task-search',
+                            child: TextField(
+                              controller: _searchController,
+                              focusNode: _searchFocusNode,
+                              textInputAction: TextInputAction.search,
+                              onChanged: _model.setSearchQuery,
+                              decoration: InputDecoration(
+                                hintText: 'Поиск задач',
+                                prefixIcon: const Icon(Icons.search),
+                                suffixIcon: _model.searchQuery.isEmpty
+                                    ? IconButton(
+                                        tooltip: 'Закрыть поиск',
+                                        onPressed: _closeSearch,
+                                        icon: const Icon(Icons.close),
+                                      )
+                                    : IconButton(
+                                        tooltip: 'Очистить поиск',
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          _model.setSearchQuery('');
+                                        },
+                                        icon: const Icon(Icons.close),
+                                      ),
+                                isDense: true,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppTokens.radius,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                        ] else if (_model.searchQuery.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              top: AppTokens.space8,
+                            ),
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: InputChip(
+                                avatar: const Icon(Icons.search, size: 18),
+                                label: Text(_model.searchQuery),
+                                onPressed: _openSearch,
+                                onDeleted: () {
+                                  _searchController.clear();
+                                  _model.setSearchQuery('');
+                                },
+                                deleteButtonTooltipMessage: 'Очистить поиск',
+                              ),
+                            ),
+                          ),
                         const SizedBox(height: AppTokens.space16),
                         SegmentedButton<TaskFilter>(
                           showSelectedIcon: false,
