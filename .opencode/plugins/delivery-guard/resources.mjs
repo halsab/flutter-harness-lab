@@ -2,7 +2,7 @@ import { reviewVerdict } from "./quality.mjs";
 
 // Bound actual child dispatches, not model tokens. Use OpenCode session
 // outcome as execution evidence; a worker's text is not completion.
-export async function registerResourceGuard(ctx, taskKey, reviewInputs, prepareReview) {
+export async function registerResourceGuard(ctx, taskKey, reviewInputs, prepareReview, record = async()=>{}) {
   const key = id => "resources/" + id;
   const queues = new Map();
   async function locked(id, fn) {
@@ -88,6 +88,7 @@ export async function registerResourceGuard(ctx, taskKey, reviewInputs, prepareR
         if (why) throw Error(why);
         await prepareReview(event,input);
         state.reviews = [...(state.reviews || []),{call:event.id,key:input.key}];
+        await record(id,"review-dispatched",{call:event.id,model:event.input.model});
       }
       if (role === "advisor") event.input = {...event.input, model:"openai/gpt-6.2-sol#medium"};
       state.pending = [...pending,{call:event.id,role}];
@@ -110,6 +111,7 @@ export async function registerResourceGuard(ctx, taskKey, reviewInputs, prepareR
         state.children = [...(state.children || []),{id:childID,role:pending.role}];
       }
       await ctx.storage.set(key(id),state);
+      if (pending.role==="reviewer") await record(id,"review-returned",{call:event.id,child:childID || null,status:event.status});
     });
   });
   return {

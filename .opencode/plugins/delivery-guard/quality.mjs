@@ -45,7 +45,8 @@ export function classify(paths, request = "", removed = [], diff = "") {
 }
 // Count additions and deletions in source/tests, excluding generated lockfiles.
 export function reviewEffort({ files, lines }, reasons = []) {
-  if (lines > 100 || files > 3 || reasons.length) return "high";
+  const focusedVisual = reasons.length === 1 && reasons[0] === visualRisk;
+  if (lines > (focusedVisual ? 200 : 100) || files > 3 || reasons.some(r => r !== visualRisk)) return "high";
   return "medium";
 }
 const reviewModel = "openai/gpt-6-luna";
@@ -134,7 +135,7 @@ export async function candidate(root, base, request, failedNames = []) {
   let product = false;
   try { await readFile(join(root, ".flutter-harness/product.json")); product = true; }
   catch (err) { if (err.code !== "ENOENT") throw err; }
-  const effort = reviewEffort(size, reasons);
+  const effort = explicitVisualRequest(request) || changed.some(p=>p.startsWith("lib/design_system/")) ? "high" : reviewEffort(size, reasons);
   if (size.lines > 400 || size.files > 8) reasons.push("large change requires independent review");
   return { digest: hash.digest("hex"), paths: changed, names, removed, reasons, size, effort, product };
 }
@@ -147,7 +148,9 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
   const result = JSON.parse((await exec("python3", args, {cwd:root, timeout:60000})).stdout);
   if (result.status !== "PASS" || !result.evidence_digest) throw Error("Invalid visual evidence report");
   return result;
-}, childStatus = async () => "", managedReview = false, reviewAvailability = async () => "") {
+}, childStatus = async () => "", managedReview = false, reviewAvailability = async () => "", validateManifest = async () => {
+  await exec("python3",[join(root,".flutter-harness/bin/harness.py"),"validate-delivery"],{cwd:root,timeout:15000});
+}) {
   const key = (id) => "quality/" + id;
   const pending = (id, call) => "quality-call/" + id + "/" + call;
   async function readState(id) { return (await ctx.storage.get(key(id))) || {}; }
@@ -161,7 +164,7 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
       const manifest = JSON.parse(await readFile(join(root, ".flutter-harness/work/delivery.json"),"utf8"));
       if (manifest.visual_required === true || manifest.visual_interaction === true) {
         if (!change.reasons.includes(visualRisk)) change.reasons.push(visualRisk);
-        change.effort = reviewEffort(change.size, change.reasons);
+        change.effort = explicitVisualRequest(task.request || "") || change.paths.some(p=>p.startsWith("lib/design_system/")) ? "high" : reviewEffort(change.size, change.reasons);
         interaction ||= manifest.visual_interaction === true;
       }
       if (manifest.review_required === true && !change.reasons.length) {
@@ -182,6 +185,7 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     const v = await view(id);
     if (!v) throw Error("No active task for review");
     if (v.state.passedDigest !== v.change.digest) throw Error("Complete standard check for this exact candidate before review");
+    if (managedReview) await validateManifest();
     const visual = v.change.reasons.includes(visualRisk)
       ? await verifyVisual(v.interaction) : null;
     if (visual && !visual.evidence_digest) throw Error("Missing visual evidence digest");
@@ -196,6 +200,10 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     if (!checked) return {...result,phase:"check",issue:gateReason(v.change,v.state,false)};
     const waiting = await childStatus(id);
     if (waiting) return {...result,phase:waiting.startsWith("A child dispatch")?"blocked":"waiting",issue:waiting};
+    if (managedReview) {
+      try { await validateManifest(); }
+      catch (err) { return {...result,phase:"manifest",issue:"Prepare valid delivery manifest: "+String(err.stderr || err.message || err).slice(-400)}; }
+    }
     let visual = null;
     if (v.change.reasons.includes(visualRisk)) {
       try {
@@ -221,21 +229,20 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     // The normal reviewer is used, retaining its configured read-only permissions.
     // Append a short required verdict contract, not a second review prompt.
     const extra = [
-      "Independently inspect the complete task diff (including uncommitted/new files) and the relevant source and tests.",
+      "Independently inspect the complete task diff (including uncommitted/new files) and only relevant source/tests. Changed paths: "+v.change.paths.join("; ")+". Avoid repository-wide reads.",
       "Original requirement: " + (v.task.request || "(see task prompt)"),
       "Check the behavior contract in docs/product when applicable against the original request, including interacting state and acceptance examples. A green test of an incorrect rule is not acceptance.",
       "Risk flags: " + (v.change.reasons.join("; ") || "requested review"),
       v.change.removed.length ? "Tests removed after a failed run: " + v.change.removed.join("; ") : "",
       v.change.reasons.some(r => /persistent data|destructive|tests disappeared/.test(r)) ? "For rejected persistence writes, verify the real repository against a seeded storage double that rejects only the write, not a replacement empty store. Assert reload and preserved records. Reject unsupported claims, missing important assertions, and removed failing tests without a valid replacement." : "Reject unsupported claims and missing important assertions.",
-      v.change.reasons.includes(visualRisk) ? "Reject unjustified nonstandard Material patterns, unclear selected mode/criterion/direction, redundant persistent controls and inaccessible states as material defects. Apply the visual acceptance checklist in .flutter-harness/templates/product/DESIGN.md. Actually open the final populated runtime captures and the baseline when available, compare at comparable viewport/content, and name the evidence and concrete differences. Inspect the visual plan, content start/density, persistent controls and secondary actions, readable long labels, selected state, changed interaction, and both themes when required. A full redesign cannot pass just because sorting works, spacing changed, or the app launches. Require a justified hierarchy and material improvement over the baseline. If required captures cannot be inspected, report VERDICT: BLOCKED; if a material visual defect remains, report VISUAL: CHANGES_REQUIRED followed by VERDICT: CHANGES_REQUIRED. On visual acceptance end with VISUAL: PASS on the line immediately before VERDICT: PASS. A logic-only recheck may reuse unchanged, actually inspected visual evidence. No screenshots are needed for architecture-only work." : "",
+      v.change.reasons.includes(visualRisk) ? "For a focused change, judge only the requested outcome and material regressions; do not require a full redesign. Verify new interaction state transitions with meaningful executable tests, not only adapted locators. Reject unjustified nonstandard Material patterns, unclear selected mode/criterion/direction, redundant persistent controls and inaccessible states as material defects. Apply the visual acceptance checklist in .flutter-harness/templates/product/DESIGN.md. Actually open the final populated runtime captures and the baseline when available, compare at comparable viewport/content, and name the evidence and concrete differences. Inspect the visual plan, content start/density, persistent controls and secondary actions, readable long labels, selected state, changed interaction, and both themes when required. A full redesign cannot pass just because sorting works, spacing changed, or the app launches. Require a justified hierarchy and material improvement over the baseline. If required captures cannot be inspected, report VERDICT: BLOCKED; if a material visual defect remains, report VISUAL: CHANGES_REQUIRED followed by VERDICT: CHANGES_REQUIRED. On visual acceptance end with VISUAL: PASS on the line immediately before VERDICT: PASS. A logic-only recheck may reuse unchanged, actually inspected visual evidence. No screenshots are needed for architecture-only work." : "",
       visual ? "Required evidence paths (open each): " + [...visual.captures.map(x=>x.path),visual.baseline?.path].filter(Boolean).join("; ") : "",
       "End with exactly VERDICT: PASS, VERDICT: CHANGES_REQUIRED, VERDICT: BLOCKED (missing/unreadable evidence), or VERDICT: ERROR (technical failure). Only actual product defects are CHANGES_REQUIRED. Name the missing evidence for BLOCKED.",
     ].filter(Boolean).join("\n");
     // Select the variant at the actual subagent invocation. Keep the same read-only
-    // reviewer role; honor a stronger explicit Luna review but never a weaker one.
-    const requested = typeof event.input.model === "string" && event.input.model.startsWith(reviewModel + "#")
-      ? event.input.model.slice(reviewModel.length + 1) : "";
-    const effort = (effortRank[requested] || 0) > effortRank[v.change.effort] ? requested : v.change.effort;
+    // reviewer role; route exact effort deterministically rather than parent escalation.
+
+    const effort = v.change.effort;
     event.input = { ...event.input, model: reviewModel + "#" + effort,
       prompt: (event.input.prompt || "") + "\n\n[Harness review contract]\n" + extra };
     await ctx.storage.set(pending(id, event.id), { kind: "review", digest: v.change.digest, visualDigest:visual?.evidence_digest || "" });

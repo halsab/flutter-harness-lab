@@ -35,7 +35,7 @@ export default Plugin.define({
       await rename(tmp,target);
     }
     let quality;
-    const resources = await registerResourceGuard(ctx, key, id=>quality.inputs(id), (event,input)=>quality.prepareReview(event,input));
+    const resources = await registerResourceGuard(ctx, key, id=>quality.inputs(id), (event,input)=>quality.prepareReview(event,input),record);
     quality = await registerQualityGate(ctx, root, "origin/" + base, key, undefined, resources.status, true, resources.reviewAvailability);
     await ctx.session.hook("prompt", async (event) => {
       const session = await ctx.session.get({ sessionID: event.sessionID });

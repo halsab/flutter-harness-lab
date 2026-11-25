@@ -1,20 +1,20 @@
 {
   "schema": 2,
-  "revision": "056e10a19f9bdd9f3fbdc3748639f75bf6f208d0",
+  "revision": "922d0f15037a1dcbd7a5f2b5235d471c0f1b4882",
   "files": {
     ".flutter-harness/PRODUCT.md": "8f113d2d06a391ae16f3f2c8ea9fb91f7152445524dec488c093764f6e88526c",
     ".flutter-harness/bin/check-product.py": "78057b22f5d477c4a525c0622fd956a1c476563013f49103132baa585dad4b1d",
     ".flutter-harness/bin/check.sh": "ac28e9e55cee5870f234bc6964a4793f63c8fc651c5c5a254be2b09163c3fec1",
-    ".flutter-harness/bin/harness.py": "667ace244c589c597c364ad80f1612618bb4a6c1075a2d660e94caa42008a141",
+    ".flutter-harness/bin/harness.py": "02b0f8de69890b8e9ba00876f01cce88929e25c87b0be9ac7f8137c57b7a6c22",
     ".flutter-harness/bin/init-product.py": "99eb198579e277c2e571c76b2ee671ffe8514807da0064cfea0fef06656e9cd0",
     ".flutter-harness/bin/maestro.sh": "e9e4e10762bbc821440fdbe5703db23add0b78125502b6ef8721813a449c9220",
     ".flutter-harness/bin/session-usage.py": "85da4b17e8f3d1a50257ac7d673a577e3769b674a6a12423513cad69f6233031",
     ".flutter-harness/bin/task-plan.py": "8a4477b8bc8cc3c1110711d2a73cc188214ca1a661018841487a17119cad6c26",
     ".flutter-harness/bin/validate-opencode.py": "b82d917bab0581283873d4dea2e47fab3c5903963ef68c7420b8d19124982ec7",
     ".flutter-harness/bin/web-preview.py": "0825e30f5c96bcb4eb2f1544c26b3cae63c5ed94384e78762ce2dd8550b73f42",
-    ".flutter-harness/config.json": "4d5e0bf5756ad0bc9efb275cf6d24c15b835988b256adc8cc335c8fe47e5f37e",
+    ".flutter-harness/config.json": "a94f52b1523bc3b715437c94f80d0f4c76e7172734032b66166f59b27db8fe4b",
     ".flutter-harness/templates/product/BEHAVIOR.md": "e4afa7445ec7147c4c25632e96d819601d5cbd9d9b3407904103a099f29bab86",
-    ".flutter-harness/templates/product/DESIGN.md": "35d92c255ce758e320053bca1ae488440b2a09020472f5b12929207e0da73544",
+    ".flutter-harness/templates/product/DESIGN.md": "b656d4c382e35b6c0b09cccfe52190c553f2ab5383692436e7b8223af556bd49",
     ".flutter-harness/templates/product/ORCHESTRATION.md": "3e2d88a5296a80aa7e553c32117da62b3231ef7843e2eccc8c12615d773eb1a0",
     ".flutter-harness/templates/product/README.md": "a4df4d4c7322335b38beb5f0c24130148c24ac8f37320002ba5f831d364b0e4c",
     ".flutter-harness/templates/product/lib/app/app.dart.template": "15063fe45a6100e306bc50e82bcef0702031ebc5e3e5ffc9fa3adcd34715c0ba",
@@ -32,11 +32,11 @@
     ".flutter-harness/templates/product/scaffold/view_model.dart.template": "5ef6b1221949fb51dc22c0f4c063f06782f52b19cfba5aa77c95369cf8fa32a7",
     ".flutter-harness/templates/product/smoke_test.dart.template": "59c64c3db9291c7dd5f4114119ce5221ca8c1fb8128d88c227e89d79c6507b96",
     ".github/workflows/flutter.yml": "52dda8691f3299b2558541f1df5291ff726518a147287481050068443cdb1ddc",
-    ".opencode/plugins/delivery-guard/guard.mjs": "7e77be4c70eca967e78af23434152f560600b68ff4e41c77c75b844d4395760c",
-    ".opencode/plugins/delivery-guard/index.js": "d98069f916ffa2124f216901799da35ecefb5338eeef32cd5f16b8f3b4ef7c77",
-    ".opencode/plugins/delivery-guard/quality.mjs": "3106330586b52a2fc2f3cc07f3dca0bcdd9cdb3fefdbd9038a03ffdf8a2fe170",
-    ".opencode/plugins/delivery-guard/resources.mjs": "6c2f9a1f9760fae97a463fd27ad90b50e2374b8a3c9e06b331b334fd55ce8046",
+    ".opencode/plugins/delivery-guard/guard.mjs": "1987f577cf624b1ea12cfd60e23dc2864afd1926069f72a9c902d95fdc00399d",
+    ".opencode/plugins/delivery-guard/index.js": "604f183e6a4690bb74d3b3d90722727b41d6e515de73e5cceb8d7a192b527081",
+    ".opencode/plugins/delivery-guard/quality.mjs": "9a520e01d03b1cb8b60adcbaf35efe45f6eb455fb7c29e5951193b3a30f852b2",
+    ".opencode/plugins/delivery-guard/resources.mjs": "aacfdda16f539b631a0957e5760b30e148e8eb03e0cbe42e73101a491c93bb0a",
     "opencode.jsonc": "feeee4289e4520d9c542962bd76e7eaea1ffc0c3ad0e2fcdc79b2d4c167e13de"
   },
-  "agents_block": "f0d8f430936fd2c8a471937d3639db7a82ce37ec1d67436a488e7868f85254de"
+  "agents_block": "e0559f2e28e00c794b794af99a16136ee12f3086e865fe96519b47f6345106fa"
 }
