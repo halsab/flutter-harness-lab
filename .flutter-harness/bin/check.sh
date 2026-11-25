@@ -1,30 +1,32 @@
 #!/usr/bin/env bash
-# Bootstrap verification. The planned Dart CLI will replace this script.
+# Deterministic verification runner.
 set -u
 set -o pipefail
 usage() { echo "Usage: bash scripts/check.sh PROJECT [quick|standard|full] [mobile|mobile-web]" >&2; exit 2; }
 PROJECT="${1:-}"
 LEVEL="${2:-standard}"
-PROFILE="${3:-mobile}"
+PROFILE="${3:-}"
 [[ -n "$PROJECT" && -f "$PROJECT/pubspec.yaml" ]] || usage
 [[ "$LEVEL" == "quick" || "$LEVEL" == "standard" || "$LEVEL" == "full" ]] || usage
 [[ "$PROFILE" == "mobile" || "$PROFILE" == "mobile-web" ]] || usage
 command -v flutter >/dev/null 2>&1 || { echo "BLOCKED: flutter missing from PATH" >&2; exit 3; }
 command -v dart >/dev/null 2>&1 || { echo "BLOCKED: dart missing from PATH" >&2; exit 3; }
 PROJECT="$(cd "$PROJECT" && pwd -P)"
-LOG_DIR="${HARNESS_ARTIFACTS_DIR:-${HOME}/.cache/flutter-harness/$(basename "$PROJECT")}"
+PROJECT_KEY="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:12])' "$PROJECT")"
+LOG_DIR="${HARNESS_ARTIFACTS_DIR:-${HOME}/.cache/flutter-harness/$(basename "$PROJECT")-$PROJECT_KEY}"
 mkdir -p "$LOG_DIR"
 ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 LOG="$LOG_DIR/check-$ID.log"
 RESULT="$LOG_DIR/check-$ID.tsv"
 printf 'check\tstatus\texit_code\n' > "$RESULT"
 failed=0
+printf 'Profile: %s; level: %s\n' "$PROFILE" "$LEVEL"
 
 check() {
   local label="$1"
   shift
   printf 'RUN  %s\n' "$label"
-  if (cd "$PROJECT" && "$@") >>"$LOG" 2>&1; then
+  if (cd "$PROJECT" && python3 -c 'import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:], timeout=600).returncode)' "$@") >>"$LOG" 2>&1; then
     printf '%s\tPASS\t0\n' "$label" >>"$RESULT"
     printf 'PASS %s\n' "$label"
   else

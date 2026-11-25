@@ -1,4 +1,4 @@
-# Product design — lean Material-first workflow
+# Product design — lean Material-first workflow (V2)
 
 Design a usable product, not a collection of widgets. The build parent owns
 design and integration; use the same Luna planning/execution roles already
@@ -20,16 +20,40 @@ layout or a runtime screenshot. Render/view an image rather than judging
 its markup alone. If a reference or rendering tool is unavailable, state
 the limitation; do not repeatedly hunt for tools or claim inspection.
 
+For an explicit redesign, preserving functionality does NOT mean preserving
+the old composition. First capture and actually inspect the existing populated
+screen at a representative compact viewport if it can run. Use realistic,
+non-sensitive fixture content, not an empty screen; retain existing data.
+Identify the two or three most consequential baseline UX problems and their
+observable impact. Save the baseline path and viewport in the design handoff;
+if it cannot be captured, name the actual limitation once. Do not treat the
+old layout as the default solution simply because it already compiles.
+
+Before UI edits, record a compact design decision in the existing behavior
+contract (one section, not another document). For a substantial redesign:
+- State the primary job and rank content, frequent actions and rare actions.
+- Sketch two materially different layout/interaction options with the same
+  realistic content at a representative compact width; an annotated text
+  wireframe is sufficient for this planning step. If visual tools are already
+  available, a small rendered concept may help. Do not build two Flutter apps.
+- Choose the layout, explain why it improves the baseline, and name specific
+  changes to placement, persistent controls, secondary actions and density.
+- Specify observable visual acceptance: the primary content start and visible
+  useful items (where meaningful), long-label handling, selected state,
+  action access, empty/error state and width/theme evidence. Use a target tied
+  to actual content and viewport, not an arbitrary screen percentage.
+- A retained control or layout with a baseline defect needs a user-job
+  justification. Do not confuse unchanged functionality with unchanged UI.
+For new screens, one coherent annotated layout is enough unless a real
+structural trade-off needs comparison. No extra agent, approval or art contest.
+
 Choose one coherent direction: layout and reading order, primary action,
 secondary actions, navigation, content density, typography, surfaces,
 responsive behavior and the meaningful state transitions. Keep a compact
-handoff in the behavior contract or local task plan. If there is a real
-layout trade-off (not just a different radius or color), compare two small
-visual alternatives using the same content and constraints. Render actual
-concept images when doing a visual comparison. Select one, explain the
-trade-off in a few sentences. A single focused revision if needed; no
-default separate SVG app, duplicated UI implementation or design competition.
-Do not delay an obvious standard Material solution for mockup production.
+handoff in the behavior contract or local task plan. A single focused revision if needed; no default separate SVG app,
+duplicated UI implementation or design competition. Do not delay an
+obvious standard Material solution for high-fidelity mockup production.
+Planning wireframes are not evidence of runtime visual quality.
 
 ## 2. Design for the product's actual job
 
@@ -75,18 +99,36 @@ avoid independently invented styling per worker.
 
 After integration, capture representative actual Flutter runtime screen(s)
 for the changed flow, at the affected widths and themes per PRODUCT.md.
-Use existing local simulator/browser and preview tooling. Prefer one stable
+Use the installed CLI launch/capture on one explicit representative target; capture receipts are candidate-bound. For meaningful interaction, use a scripted scenario or inspect actual state before capturing. Prefer one stable
 runtime session and targeted refresh over rebuilding every platform. If
 isolated fixture data is needed, use the real screen and design system;
 never ship demo data or erase real records. Static mockups, SVGs and Ahem
 test renders cannot establish runtime visual acceptance.
 
-Compare actual captures against the intended design and request:
-- Does the primary content have appropriate prominence and usable density?
-- Are important actions and selected states discoverable and unambiguous?
-- Do spacing, alignment, typography, contrast and surfaces feel coherent?
-- Are long content, relevant empty/error states and changed layout handled?
-- Has any functionality, identity, data or state rule changed unintentionally?
+For substantial redesigns capture a populated final screen and a key changed
+interaction at the representative compact width, in both light and dark
+on one runtime platform. Use comparable content/viewport to the baseline
+where possible; inspect wide layout when affected. Save actual image paths
+under .flutter-harness/previews/ and include them in the handoff and PR.
+Do not count a build, an empty screen or an unopened file as visual review.
+
+Compare actual captures against the intended design, baseline and request:
+- **Hierarchy:** where does real content start; how many useful items are
+  visible; is an avoidable stack of persistent controls still dominating?
+  For a content-first utility, the list is the primary content, not its form.
+  For other product types use the corresponding primary job, not list metrics.
+- **Actions:** can users find frequent actions, and do rare actions consume
+  space better used by content? Contextual means actually available in context,
+  not a claim in a spec. Are destructive actions and scope clear?
+- **State:** is the selected mode/order/filter readable without guessing?
+  Does a label such as "Default" explain what it does? Does an icon-only
+  action have an accessible label/tooltip?
+- **Craft:** inspect alignment, spacing rhythm, hierarchy, readable long
+  content, contrast, clipping, safe areas and representative themes.
+- **Outcome:** what material UX problems did the redesign actually solve?
+  A mere alignment/spacing tweak or green sorting tests are insufficient for
+  a broad redesign if the dominant baseline issues remain. Preserve data,
+  identity, behavior and important states, not unnecessary old layout.
 
 Use behavioral tests for interactions and persistence; screenshots cannot
 prove animation smoothness, keyboard behavior or accessibility compliance.
@@ -98,7 +140,19 @@ For changes requiring independent review, give the existing reviewer the
 original request, behavior contract, chosen design and actual images.
 It should identify concrete product or visual defects and their impact,
 not reward a generic clean appearance or invent arbitrary preferences.
-No extra design reviewer or numeric beauty score. Required visual evidence
-missing means visual acceptance is BLOCKED; do not substitute a mockup
-or green analyzer/test output. Report the specific gap. Respect the existing
-bounded recovery and publication policy.
+Require the same reviewer to open the supplied populated runtime images,
+not infer quality from source, a build log or the parent's statement.
+Review against the original job and the observable baseline/target, not
+only against a self-authored design contract. Name evidence inspected,
+one concrete finding per material defect and its user impact. If the
+design direction is too conservative, challenge it. Visual acceptance is
+separate from correctness; report VISUAL: PASS immediately before the final
+VERDICT: PASS for a visual task. Otherwise report VISUAL: CHANGES_REQUIRED
+and VERDICT: CHANGES_REQUIRED. A logic-only targeted recheck can reuse
+unchanged images after actually inspecting them. Do not retake them for
+invisible source changes. No extra design reviewer or numeric beauty score.
+Required visual evidence missing means visual acceptance is BLOCKED; do not
+substitute a mockup or green analyzer/test output. Report the specific gap.
+The guard checks the explicit reviewer verdict, not aesthetic truth or the
+provenance of an image; the owner still makes final aesthetic acceptance.
+Respect existing bounded recovery and publication policy.

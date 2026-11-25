@@ -17,26 +17,27 @@ export function taskIntent(text) {
   return /(?:\b(?:add|implement|fix|create|build|update|refactor|finish|continue)\b|добав|реализ|исправ|созда|разработ|доработ|переимен|измени|внеси|заверш|доведи|продолжи)/i.test(text || "");
 }
 export function changed(a, b) {
-  return a.head !== b.head || a.branch !== b.branch || a.status !== b.status;
+  return a.head !== b.head || a.branch !== b.branch || a.status !== b.status || a.digest !== b.digest;
 }
 export async function snapshot(root) {
-  const [head, branch, status] = await Promise.all([
+  const [head, branch, status, digest] = await Promise.all([
     command(root, "git", ["rev-parse", "HEAD"]),
     command(root, "git", ["branch", "--show-current"]),
     command(root, "git", ["status", "--porcelain=v1", "--untracked-files=normal"]),
+    command(root, "python3", [join(root, ".flutter-harness/bin/harness.py"), "fingerprint"]),
   ]);
-  if (![head, branch, status].every(x => x.ok)) throw Error("Unable to read Git state");
-  return { head: head.message, branch: branch.message, status: status.message };
+  if (![head, branch, status, digest].every(x => x.ok)) throw Error("Unable to read Git state");
+  return { head: head.message, branch: branch.message, status: status.message, digest: digest.message };
 }
-export function decide(before, current, intent, prOK, prMessage) {
+export function decide(before, current, intent, prOK, prMessage, base = "app") {
   const didWork = changed(before, current);
   if (!didWork && !intent) return { active: false, passed: true, reasons: [] };
   const reasons = [];
-  if (["app", "main", "master", ""].includes(current.branch)) reasons.push("Create a feature branch; never commit onto the integration branch");
+  if ([base, "app", "main", "master", "develop", ""].includes(current.branch)) reasons.push("Create a feature branch; never commit onto the integration branch");
   // A feature may start with uncommitted edits and end clean after committing them.
   // An unchanged pre-existing dirty worktree is also not newly unfinished work.
   // Only flag a *currently dirty* worktree that differs from the initial state.
-  if (current.status && current.status !== before.status) {
+  if (current.status && (current.status !== before.status || current.digest !== before.digest)) {
     reasons.push("New or changed uncommitted work remains (preserve unrelated preexisting changes)");
   }
   if (!didWork && intent) reasons.push("No task change was recorded in this session");
@@ -45,9 +46,10 @@ export function decide(before, current, intent, prOK, prMessage) {
 }
 export async function inspect(root, base, before, intent) {
   const current = await snapshot(root);
-  const script = join(root, ".flutter-harness", "bin", "verify-pr.sh");
-  const pr = await command(root, "bash", [script, ".", base]);
-  return { ...decide(before, current, intent, pr.ok, pr.message), current };
+  if (!changed(before, current) && !intent) return { active:false, passed:true, reasons:[], current };
+  const script = join(root, ".flutter-harness", "bin", "harness.py");
+  const pr = await command(root, "python3", [script, "verify"]);
+  return { ...decide(before, current, intent, pr.ok, pr.message, base), current };
 }
 
 // A repeated idle with identical source/check/delivery state is not progress.
@@ -70,5 +72,5 @@ export function recovery(state, result, quality) {
     "[Flutter Harness recovery] " + reason + ". " + step +
     " Preserve unrelated changes and any task manifest. A failed check is work to fix, not an external blocker. " +
     "Do not escalate to Sol because of failure. If permission is denied or recovery cannot progress, state the exact blocker; preserve work. " +
-    "Only after all required evidence passes, commit task files, request push approval and create/update one PR. Never bypass checks or claim DONE without a verified PR." };
+    "After required evidence passes, run the canonical Harness deliver operation with approval and the task manifest. Never bypass checks or claim DONE without a verified PR." };
 }

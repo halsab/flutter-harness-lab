@@ -80,7 +80,7 @@ def inspect(root, ui_profile):
                     material = bool(MATERIAL_IMPORT.search(uri))
                     direct_material = (ui_profile in {"universal", "custom"} and material
                                        and (top == "app" or layer in PRESENTATION))
-                    if ui_profile == "universal" and not material:
+                    if ui_profile in {"universal", "custom"} and not material:
                         errors.append(f"lib/{path}: universal uses Material only; remove alternate visual UI import ({uri})")
                     elif top != "design_system" and not direct_material:
                         errors.append(f"lib/{path}: use design_system instead of platform UI library ({uri})")
@@ -126,7 +126,7 @@ def verify(root, base=None):
     settings = json.loads(cfg.read_text(encoding="utf-8"))
     if settings.get("schema") != 1 or settings.get("architecture") != "feature-mvvm":
         return ["invalid product schema or architecture"]
-    if settings.get("ui_profile") not in {"adaptive", "universal", "minimal", "custom"}:
+    if settings.get("ui_profile") not in {"universal", "custom"}:
         return ["invalid UI profile"]
     if settings.get("status") == "pending":
         return [] if pending_allowed(root, base) else ["product foundation pending; migrate and activate before application delivery"]

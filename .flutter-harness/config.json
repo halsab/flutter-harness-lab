@@ -1,4 +1,6 @@
 {
+  "schema": 2,
   "profile": "mobile-web",
-  "source": "https://github.com/halsab/flutter-harness"
+  "integration_branch": "app",
+  "revision": "198755aa7e5c1e0a85147446efa436db14d01e9b"
 }

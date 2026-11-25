@@ -166,45 +166,12 @@ once on the actual integrated candidate (and bounded recheck if needed).
 One task branch and one PR, only parent publishes; never auto-merge.
 Do not call every local child or intermediate check a delivered feature.
 
-## Resource-aware execution
+## Execution and acceptance
 
-Keep the original behavior contract and affected interface facts in each
-slice; include only the files and acceptance examples it needs. Do not send
-the entire parent transcript, diff or long build logs to every child.
-A Low worker should return a concise summary and suggested targeted check.
-Use one representative runtime capture per affected state/theme as required
-by PRODUCT.md; avoid rebuilding every platform after unrelated fixes.
-One standard check on the final stable candidate, reuse observed successful
-evidence on unchanged source/tests/spec. If a check failed, first inspect
-the earliest actual failure, reduce to a focused case and change the
-implementation or test fixture for a reason; run affected checks before
-one final standard confirmation. Do not rerun the same failing command
-repeatedly without a changed hypothesis. After two unsuccessful fixes to
-one cause, use one focused Luna High diagnosis if it adds information.
-Do not automatically escalate to Sol or add an unrelated refactor.
-
-Independent review remains mandatory for actual risk or large changes
-(>400 changed lines or >8 source/test files), normally Luna High; no
-automatic xhigh for size. A small eligible review can use Medium.
-At most one initial review and one targeted re-review. Preserve the original
-acceptance criteria and actual same-candidate check/review gate.
-The plugin reserves two review tool attempts; a failed dispatch consumes
-an attempt. If exhausted with unresolved issues, preserve progress and
-report INCOMPLETE, never bypass.
-
-Automatic idle recovery distinguishes missing/failed check, missing review
-and remaining work/delivery; at most two continuations, stopping earlier
-if candidate/check/delivery evidence is unchanged. Genuine permission,
-provider or unavailable required device blockers must be reported honestly.
-No hard wall-clock or token budget is inferred from subscription counters.
-Do not artificially stop a healthy complex task simply because it is long.
-
-## Measure before increasing concurrency
-
-Capture actual models/variants, total parent+child input/output/reasoning
-tokens, elapsed time, number of slices, failed attempts and material
-defects. Parallel execution may save wall time while increasing tokens.
-Two workers is an initial limit, not a proven optimum or provider quota.
-Do not widen until a live trial demonstrates benefit. The plan checker
-does not force dispatch, wait or completion at the OpenCode runtime level;
-that enforcement can be considered after the workflow is tested.
+Use the canonical CLI for check, runtime evidence and delivery. The
+task-plan helper validates declared dependencies and path conflicts only;
+a done label is not proof of execution. Parent must observe actual
+completed child sessions, integrate the code and run the final check.
+Reuse evidence on identical candidates. At most two reviewer attempts and
+one advisor attempt; no repeated full checks or automatic premium
+escalation. Report INCOMPLETE if required work remains blocked.
