@@ -90,6 +90,49 @@ def config(root):
     return c
 
 
+def installed_revision(root, c, expected=None, base_ref=None):
+    """Validate local managed bytes and, before begin, the fetched base.
+    This is consistency, not a remote latest-version service."""
+    revision = c.get("revision")
+    require(isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40,64}",revision),
+            "Missing Harness revision; sync managed installation")
+    manifest_path = root / ".flutter-harness/managed.json"
+    manifest = read_json(manifest_path)
+    require(manifest.get("schema") == 2 and manifest.get("revision") == revision,
+            "Harness config/manifest revision mismatch")
+    require(expected is None or revision == expected,
+            "Installed Harness revision differs from expected source revision; sync first")
+    managed = manifest.get("files")
+    require(isinstance(managed,dict) and ".flutter-harness/config.json" in managed and
+            ".flutter-harness/bin/harness.py" in managed and
+            ".opencode/plugins/delivery-guard/index.js" in managed,
+            "Incomplete managed manifest")
+    for name, digest in managed.items():
+        path = root / name
+        require(not Path(name).is_absolute() and ".." not in Path(name).parts and
+                not any(p.is_symlink() for p in (path,*path.parents) if p != root and root in p.parents)
+                and path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == digest,
+                "Managed Harness file differs: " + name)
+    def agents_hash(data):
+        blocks = re.findall(rb"<!-- flutter-harness:start -->[\s\S]*?<!-- flutter-harness:end -->",data)
+        require(len(blocks)==1,"Missing or ambiguous managed AGENTS block")
+        return hashlib.sha256(blocks[0]).hexdigest()
+    require(agents_hash((root/"AGENTS.md").read_bytes()) == manifest.get("agents_block"),
+            "Managed AGENTS block differs")
+    if base_ref:
+        try:
+            remote = git(root,"show",base_ref+":.flutter-harness/managed.json")
+            remote_agents = git(root,"show",base_ref+":AGENTS.md")
+        except Blocked:
+            raise Blocked("Integration branch has no compatible Harness installation; merge sync PR first") from None
+        require(json.loads(remote) == manifest and agents_hash(remote_agents)==manifest["agents_block"],
+                "Integration branch has a different Harness revision; merge sync PR and restart OpenCode before begin")
+        require(not git(root,"diff","--name-only",base_ref,"--",*managed),
+                "Integration branch managed files differ; merge sync PR first")
+    return {"status":"PASS","revision":revision,"managed_files":len(managed),
+            "manifest_sha256":hashlib.sha256(manifest_path.read_bytes()).hexdigest()}
+
+
 def work(root):
     return root / ".flutter-harness/work"
 
@@ -97,6 +140,10 @@ def work(root):
 def event(root, stage, **details):
     """Append only structured lifecycle facts, never prompts or command output."""
     path = work(root) / "lifecycle.jsonl"
+    try:
+        details.setdefault("revision",read_json(root/".flutter-harness/config.json").get("revision"))
+    except (OSError,ValueError,Blocked):
+        pass
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps({"at": int(time.time() * 1000), "stage": stage, **details}) + "\n")
@@ -159,21 +206,24 @@ def begin(root, c, name):
     require(text(git(root, "rev-parse", "FETCH_HEAD")) ==
             text(git(root, "rev-parse", "origin/" + base)),
             "origin integration reference is stale")
+    installed_revision(root,c,base_ref="origin/"+base)
     current = text(git(root, "symbolic-ref", "--short", "HEAD"))
     if current != name:
         git(root, "switch", "-c", name, "origin/" + base)
-        for filename in ("check.json","delivery.json","delivery-result.json","delivery-state.json","runtime.json","visual-plan.json","visual-preflight.json","sessions.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
+        for filename in ("check.json","delivery.json","delivery-result.json","delivery-state.json","runtime.json","visual-plan.json","visual-preflight.json","runtime-selection.json","sessions.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
             (work(root)/filename).unlink(missing_ok=True)
     require(text(git(root, "merge-base", "HEAD", "origin/" + base)) ==
             text(git(root, "rev-parse", "origin/" + base)),
             "Feature branch does not contain current integration base")
+    installed_revision(root,c)
     event(root, "begin", branch=name, base=base)
     output(status="PASS", branch=name, base=base)
 
 
-def doctor(root, c, operation):
+def doctor(root, c, operation, only=None):
+    require(only is None or operation=="visual", "--only is for visual preflight")
     if operation == "visual":
-        visual_preflight(root, c)
+        visual_preflight(root, c, only)
         return
     needed = {"check": ("git", "flutter", "dart", "python3"),
               "deliver": ("git", "gh"), "android": ("flutter", "adb"),
@@ -281,7 +331,7 @@ def completion(root, c):
     manifest = read_json(work(root) / "delivery.json")
     require(all(result.get(k) == v for k, v in {
         "status": "PASS", "head": head, "digest": digest, "branch": name,
-        "base": c["integration_branch"], "repo": origin_repo(root),
+        "base": c["integration_branch"], "repo": origin_repo(root), "revision":c["revision"],
         "manifest_digest": manifest_digest(manifest), "checked_at": receipt.get("checked_at"),
     }.items()) and isinstance(result.get("delivered_at"), int),
             "Missing/stale delivery evidence; resume canonical deliver")
@@ -308,6 +358,7 @@ def deliver(root, c):
     require(receipt.get("status") == "PASS" and receipt.get("digest") == digest,
             "Missing/stale standard check receipt; run check")
     manifest = read_json(work(root) / "delivery.json")
+    visual = visual_evidence(root,manifest.get("visual_interaction") is True,emit=False) if manifest.get("visual_required") is True or manifest.get("visual_interaction") is True else None
     required_e2e = manifest.get("required_e2e", [])
     require(isinstance(required_e2e, list) and all(p in ("android", "ios", "web") for p in required_e2e), "Invalid required_e2e")
     for platform in required_e2e:
@@ -341,7 +392,7 @@ def deliver(root, c):
     existing = pr_list(root, repo, name)
     require(not existing or existing.get("baseRefName") == base,
             "Existing PR targets another base")
-    identity = {"branch": name, "base": base, "repo": repo, "digest": digest,
+    identity = {"branch": name, "base": base, "repo": repo, "digest": digest, "revision":c["revision"],
                 "manifest_digest": manifest_digest(manifest)}
     def checkpoint(stage, **extra):
         atomic_json(work(root) / "delivery-state.json", {**identity, "stage": stage, **extra})
@@ -363,7 +414,9 @@ def deliver(root, c):
     head = text(git(root, "rev-parse", "HEAD"))
     checkpoint("delivery-committed", head=head)
     body = work(root) / "pr-body.md"
-    summary = ["", "", "## Harness evidence (generated)", f"- Candidate: {digest}", "- Standard check: PASS"]
+    summary = ["", "", "## Harness evidence (generated)", f"- Harness revision: {c['revision']}", f"- Candidate: {digest}", "- Standard check: PASS"]
+    if visual:
+        summary.append(f"- Visual evidence: {visual['evidence_digest']}")
     for platform in required_e2e:
         summary.append(f"- Required {platform} E2E: PASS")
     expected_body = manifest["body"].rstrip() + "\n".join(summary) + "\n"
@@ -469,42 +522,98 @@ def probe_runtime(root, platform, device=None):
         return png_size(image.read_bytes())
 
 
-def visual_preflight(root, c):
-    devices = json.loads(run(root, "flutter", "devices", "--machine", capture=True, timeout=60))
-    require(isinstance(devices, list), "Invalid Flutter device discovery")
-    ready, unavailable = [], []
+def runtime_targets(root,c,only=None):
+    devices = json.loads(run(root,"flutter","devices","--machine",capture=True,timeout=60))
+    require(isinstance(devices,list),"Invalid Flutter device discovery")
+    choices = {"ios":[],"android":[]}
+    for item in devices:
+        target = item.get("id")
+        platform = str(item.get("targetPlatform",""))
+        if item.get("emulator") is not True or not isinstance(target,str):
+            continue
+        platform = "android" if platform.startswith("android") else platform
+        if platform not in choices:
+            continue
+        name = str(item.get("name",""))
+        preferred = os.environ.get("HARNESS_"+platform.upper()+"_DEVICE")
+        phone = not re.search(r"ipad|tablet|fold|desktop",name,re.I)
+        choices[platform].append(((target != preferred,not phone,name.casefold(),target),target))
     targets = []
-    for device in devices:
-        target = device.get("id")
-        platform = str(device.get("targetPlatform", ""))
-        if device.get("emulator") is True and isinstance(target, str):
-            if platform.startswith("android"):
-                targets.append(("android", target))
-            elif platform == "ios":
-                targets.append(("ios", target))
-    # Native simulators support inspection of live interactive state.
-    # A headless browser is the fallback, not a reason to build Web first.
-    targets.sort(key=lambda item: (item[0] != "ios", item[1]))
-    if c["profile"] == "mobile-web":
-        targets.append(("web", None))
-    for platform, target in targets:
-        try:
-            dimensions = probe_runtime(root, platform, target)
-            ready.append({"platform": platform, "device": target, "size": dimensions})
-        except (Blocked, OSError, ValueError, subprocess.TimeoutExpired) as exc:
-            # Raw stderr may contain local details; keep it in the local report,
-            # not in the compact exported lifecycle log.
-            unavailable.append({"platform": platform, "device": target, "reason": str(exc)[:800]})
-    report = {"status": "PASS" if ready else "BLOCKED", "ready": ready, "unavailable": unavailable,
-              "branch":text(git(root,"branch","--show-current")), "digest":fingerprint(root)}
-    atomic_json(work(root) / "visual-preflight.json", report)
-    event(root, "visual-preflight", ready=[x["platform"] for x in ready],
+    for platform in ("ios","android"):
+        if only and only != platform:
+            continue
+        # One deterministic booted device per platform, not all emulators.
+        if choices[platform]:
+            targets.append((platform,min(choices[platform])[1]))
+    if c["profile"] == "mobile-web" and only in (None,"web"):
+        targets.append(("web",None))
+    return targets
+
+
+def pinned_target(root):
+    path = work(root)/"runtime-selection.json"
+    if not path.exists():
+        return None
+    data = read_json(path)
+    require(data.get("branch")==text(git(root,"branch","--show-current")),
+            "Runtime selection belongs to another task; use begin")
+    return (data["platform"],data.get("device"))
+
+
+def save_preflight(root,ready,unavailable):
+    report = {"status":"PASS" if ready else "BLOCKED","ready":ready,"unavailable":unavailable,
+              "branch":text(git(root,"branch","--show-current")),"digest":fingerprint(root)}
+    atomic_json(work(root)/"visual-preflight.json",report)
+    event(root,"visual-preflight",ready=[x["platform"] for x in ready],
           unavailable=[x["platform"] for x in unavailable])
-    output(**report)
-    require(ready, "No capture-capable simulator/browser; do not start visual implementation blindly")
+    return report
 
 
-def launch(root, c, platform, device):
+def visual_preflight(root,c,only=None):
+    pin = pinned_target(root)
+    require(not pin or only in (None,pin[0]), "Required platform differs from pinned task target")
+    unavailable = []
+    for platform,target in ([pin] if pin else runtime_targets(root,c,only)):
+        try:
+            dimensions = probe_runtime(root,platform,target)
+        except (Blocked,OSError,ValueError,subprocess.TimeoutExpired) as exc:
+            unavailable.append({"platform":platform,"device":target,"reason":str(exc)[:800]})
+            continue
+        report = save_preflight(root,[{"platform":platform,"device":target,"size":dimensions}],unavailable)
+        output(**report)
+        return
+    output(**save_preflight(root,[],unavailable))
+    raise Blocked("No capture-capable selected runtime target")
+
+
+def launch_auto(root,c,only=None):
+    """First successful launch pins the task target. No silent platform switch
+    after baseline, no boot/install/reset of devices, no all-platform build."""
+    pin = pinned_target(root)
+    require(not pin or only in (None,pin[0]), "Required platform differs from pinned task target")
+    unavailable = []
+    for platform,target in ([pin] if pin else runtime_targets(root,c,only)):
+        try:
+            dimensions = probe_runtime(root,platform,target)
+            result = launch(root,c,platform,target,preprobed=True,emit=False)
+        except (Blocked,OSError,ValueError,subprocess.TimeoutExpired) as exc:
+            unavailable.append({"platform":platform,"device":target,"reason":str(exc)[:800]})
+            event(root,"runtime-target-failed",platform=platform,error_type=type(exc).__name__)
+            # A candidate mutation is not a platform failure.
+            if isinstance(exc,Blocked) and "source changed" in str(exc).lower():
+                raise
+            continue
+        save_preflight(root,[{"platform":platform,"device":target,"size":dimensions}],unavailable)
+        atomic_json(work(root)/"runtime-selection.json",{"branch":text(git(root,"branch","--show-current")),
+                    "platform":platform,"device":target})
+        output(**result)
+        return
+    output(**save_preflight(root,[],unavailable))
+    raise Blocked("Pinned runtime failed; preserve comparable evidence and diagnose it" if pin else
+                  "No runtime target could launch; inspect retained logs")
+
+
+def launch(root, c, platform, device, *, preprobed=False, emit=True):
     require(platform != "web" or c["profile"] == "mobile-web", "Web disabled")
     digest = fingerprint(root)
     receipt = work(root) / "runtime.json"
@@ -513,7 +622,8 @@ def launch(root, c, platform, device):
     event(root, "runtime-launch-start", platform=platform, digest=digest)
     if platform == "web":
         # Fail on missing Chromium before expensive Flutter Web compilation.
-        probe_runtime(root, platform)
+        if not preprobed:
+            probe_runtime(root, platform)
         action = "status" if previous.get("digest") == digest and previous.get("platform") == "web" else "start"
         try:
             result = text(run(root, sys.executable, str(HERE / "web-preview.py"),
@@ -529,7 +639,8 @@ def launch(root, c, platform, device):
     else:
         require(device and not device.startswith("-"), "Explicit emulator/simulator ID required")
         with target_lock(platform, device):
-            probe_runtime(root, platform, device)
+            if not preprobed:
+                probe_runtime(root, platform, device)
             folder = Path(tempfile.mkdtemp(prefix="launch-" + platform + "-", dir=work(root)))
             log = folder / "launch.log"
             event(root, "runtime-launch-log", platform=platform, log=str(log.relative_to(root)))
@@ -537,7 +648,10 @@ def launch(root, c, platform, device):
     require(fingerprint(root) == digest, "Runtime source changed during launch")
     atomic_json(receipt, {"digest": digest, "platform": platform, "device": device})
     event(root, "runtime-ready", platform=platform, digest=digest)
-    output(status="READY", platform=platform, target=device, digest=digest)
+    result = {"status":"READY","platform":platform,"target":device,"digest":digest}
+    if emit:
+        output(**result)
+    return result
 
 
 def capture(root, platform, label, theme, viewport, settle=1.5, scenario=None):
@@ -601,19 +715,21 @@ def capture(root, platform, label, theme, viewport, settle=1.5, scenario=None):
     output(status="CAPTURED", path=str(image), digest=digest)
 
 
-def visual_evidence(root, require_interaction=False):
+def visual_evidence(root, require_interaction=False, *, emit=True):
     """Validate receipt coverage, not aesthetic quality or truthful UI content."""
     digest = fingerprint(root)
     plan_path = work(root) / "visual-plan.json"
     require(plan_path.is_file(), "Missing visual-plan.json: declare populated screens and changed interaction states")
     plan = read_json(plan_path)
     platform = plan.get("platform")
+    pin = pinned_target(root)
+    require(not pin or platform==pin[0], "Visual plan differs from pinned runtime platform")
     require(platform in ("android", "ios", "web"), "Visual plan needs one representative platform")
     require(isinstance(plan.get("fixture"), str) and plan["fixture"].strip(), "Describe representative isolated fixture data")
     baseline = plan.get("baseline")
     require(isinstance(baseline, dict), "Declare baseline digest/label or unavailable reason")
     preflight_path = work(root) / "visual-preflight.json"
-    require(preflight_path.is_file(), "Run doctor visual before runtime work")
+    require(preflight_path.is_file(), "Run launch auto (or doctor visual) before runtime work")
     preflight = read_json(preflight_path)
     require(preflight.get("status") == "PASS" and preflight.get("branch") == text(git(root,"branch","--show-current")),
             "Visual preflight missing or from another task branch")
@@ -663,6 +779,7 @@ def visual_evidence(root, require_interaction=False):
         captures.extend(pair)
     require(len(targets) == 1, "All planned evidence must use the same runtime target")
     target = next(iter(targets))
+    require(not pin or platform=="web" or target==pin[1], "Capture target differs from pinned runtime device")
     require(platform == "web" or any(x.get("platform") == platform and x.get("device") == target for x in preflight["ready"]),
             "Native capture target did not pass preflight")
     baseline_receipt = None
@@ -689,7 +806,8 @@ def visual_evidence(root, require_interaction=False):
         {k:v for k,v in item.items() if k != "path"} for item in captures]})
     result = {"status":"PASS", "digest":digest, "evidence_digest":evidence_digest,
               "captures":captures, "plan":plan, "baseline":baseline_receipt}
-    output(**result)
+    if emit:
+        output(**result)
     return result
 
 
@@ -739,8 +857,8 @@ def usage(root, sessions, *, emit=True):
 def diagnostics(root, sessions):
     """One safe, compact report; sanitized exports are temporary."""
     summary = usage(root, sessions, emit=False)
-    data = {"usage": summary, "artifacts": {}}
-    for name in ("check.json", "delivery-state.json", "delivery-result.json", "sessions.json", "runtime.json"):
+    data = {"harness":installed_revision(root,config(root)), "usage": summary, "artifacts": {}}
+    for name in ("check.json", "delivery-state.json", "delivery-result.json", "sessions.json", "runtime.json", "runtime-selection.json"):
         path = work(root) / name
         if path.is_file():
             data["artifacts"][name] = read_json(path)
@@ -777,6 +895,9 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("doctor")
     p.add_argument("operation", choices=("check","deliver","android","ios","web","e2e","visual"))
+    p.add_argument("--only", choices=("ios","android","web"))
+    p = sub.add_parser("revision")
+    p.add_argument("--expect")
     p = sub.add_parser("begin")
     p.add_argument("branch")
     for cmd in ("check","ci","deliver","verify","completion","status","fingerprint","stop-preview","adopt"):
@@ -787,8 +908,9 @@ def main():
     p.add_argument("name")
     p.add_argument("layers", nargs="+", choices=("models","repositories","services","view_models","screens","widgets","use_cases"))
     p = sub.add_parser("launch")
-    p.add_argument("platform", choices=("android","ios","web"))
+    p.add_argument("platform", choices=("auto","android","ios","web"))
     p.add_argument("--device")
+    p.add_argument("--only", choices=("ios","android","web"))
     p = sub.add_parser("capture")
     p.add_argument("platform", choices=("android","ios","web"))
     p.add_argument("label")
@@ -811,8 +933,13 @@ def main():
             print(fingerprint(root))
             return 0
         c = config(root)
+        if a.command == "revision":
+            output(**installed_revision(root,c,a.expect))
+            return 0
+        if a.command in ("begin","check","ci","deliver","verify","completion","launch","capture","visual-evidence","e2e"):
+            installed_revision(root,c)
         if a.command == "doctor":
-            doctor(root, c, a.operation)
+            doctor(root, c, a.operation, a.only)
         elif a.command == "begin":
             begin(root, c, a.branch)
         elif a.command == "check":
@@ -833,14 +960,19 @@ def main():
             receipt = work(root) / "check.json"
             digest = fingerprint(root)
             output(branch=text(git(root,"branch","--show-current")),
-                   base=c["integration_branch"], changed=dirty(root), digest=digest,
+                   base=c["integration_branch"], revision=c.get("revision"), changed=dirty(root), digest=digest,
                    checked=receipt.exists() and read_json(receipt).get("digest")==digest)
         elif a.command == "scaffold":
             scaffold(root, a.name, a.layers)
         elif a.command == "adopt":
             run(root, sys.executable, str(HERE / "init-product.py"), ".")
         elif a.command == "launch":
-            launch(root, c, a.platform, a.device)
+            if a.platform == "auto":
+                require(a.device is None,"Use HARNESS_IOS_DEVICE/HARNESS_ANDROID_DEVICE for preference")
+                launch_auto(root,c,a.only)
+            else:
+                require(a.only is None,"--only is for launch auto")
+                launch(root,c,a.platform,a.device)
         elif a.command == "capture":
             capture(root, a.platform, a.label, a.theme, a.viewport, a.settle, a.scenario)
         elif a.command == "visual-evidence":
@@ -858,12 +990,12 @@ def main():
                 usage(root, sessions)
         return 0
     except (Blocked, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
-        if a.command in ("check", "deliver", "doctor", "launch", "capture", "visual-evidence", "e2e"):
+        if a.command in ("begin", "check", "deliver", "doctor", "launch", "capture", "visual-evidence", "e2e"):
             try:
                 # Keep compact shareable error classifications; full command logs
                 # remain local. No arbitrary stderr, prompts or environment values.
                 event(root, a.command + "-blocked", error_type=type(exc).__name__,
-                      reason=str(exc)[:240] if isinstance(exc, Blocked) and "\\n" not in str(exc) and "exit=" not in str(exc) else "See local command log/terminal")
+                      reason=str(exc)[:240] if isinstance(exc, Blocked) and "\n" not in str(exc) and "exit=" not in str(exc) else "See local command log/terminal")
             except OSError:
                 pass
         print(f"BLOCKED: {exc}", file=sys.stderr)

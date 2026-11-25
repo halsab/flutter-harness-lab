@@ -67,6 +67,12 @@ contrast, semantics, keyboard/focus/hover for Web, RTL and long translations.
 Use familiar Material navigation and controls with normal platform behavior,
 not a second visual implementation. A single column is fine for a small app on desktop.
 
+## Adaptive layout foundation
+
+One shared ViewModel, navigation intent and Material 3 design system. Decide layout using the actual local constraints (LayoutBuilder), not platform/device name; use MediaQuery.sizeOf for window-level navigation. Shared AppWindowClass (new starter) classifies widths using AppTokens. Existing projects may add this small helper when needed without rewriting the app shell. Select an appropriate canonical composition: bounded single column for simple content; list-detail / split view for a real selection/detail flow; supporting pane for contextual tools; adaptive grid for collections; NavigationBar to NavigationRail/Drawer for real destinations. Do not invent panes or navigation just to fill width. Keep pane minimum widths, readable line lengths and local breakpoints; use Flex/Wrap/ConstrainedBox and standard Material controls. Do not scale the whole mobile UI. Maintain selection, query, sort, drafts, focus where practical, scroll/navigation and saved data across resize/rotation; keep shared state above layout branches. Respect split-screen and browser resize, keyboard/focus traversal, mouse hover and touch targets. No separate Web/Cupertino UI tree or new adaptive library by default.
+
+For meaningful layout changes, execute widget acceptance at 360×800, 768×1024, 1440×900 logical px (or actual supported representative sizes) plus a transition between classes on the same mounted state. Assert meaningful control access, selected state, no overflow and expected composition; cover large text and keyboard/focus where relevant. A bounded single-column result can pass on all widths; no forced multi-pane. Only add runtime wide-width/browser evidence when the wide layout or browser interaction is materially affected. For a small isolated visual edit inspect affected states only; do not redesign unrelated screens.
+
 ## One visual foundation: Material 3
 
 Use Material 3 on Android, iOS and Flutter Web (ui_profile: universal).
