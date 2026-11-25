@@ -14,7 +14,7 @@ async function command(root, bin, args) {
   }
 }
 export function taskIntent(text) {
-  return /(?:\b(?:add|implement|fix|create|build|update|refactor|finish|continue)\b|добав|реализ|исправ|созда|разработ|доработ|переимен|измени|внеси|заверш|доведи|продолжи)/i.test(text || "");
+  return /(?:\b(?:add|implement|fix|create|build|update|refactor|finish|continue)\b|улучш|добав|реализ|исправ|созда|разработ|доработ|переимен|измени|внеси|заверш|доведи|продолжи)/i.test(text || "");
 }
 export function changed(a, b) {
   return a.head !== b.head || a.branch !== b.branch || a.status !== b.status || a.digest !== b.digest;
@@ -41,14 +41,16 @@ export function decide(before, current, intent, prOK, prMessage, base = "app") {
     reasons.push("New or changed uncommitted work remains (preserve unrelated preexisting changes)");
   }
   if (!didWork && intent) reasons.push("No task change was recorded in this session");
-  if (!prOK) reasons.push("PR missing or invalid: " + prMessage);
+  if (!prOK) reasons.push("Delivery incomplete: " + prMessage);
   return { active: true, passed: reasons.length === 0, reasons };
 }
 export async function inspect(root, base, before, intent) {
   const current = await snapshot(root);
   if (!changed(before, current) && !intent) return { active:false, passed:true, reasons:[], current };
   const script = join(root, ".flutter-harness", "bin", "harness.py");
-  const pr = await command(root, "python3", [script, "verify"]);
+  const pr = current.status || [base, "app", "main", "master", "develop", ""].includes(current.branch)
+    ? {ok:false, message:"Finish local work and run canonical deliver"}
+    : await command(root, "python3", [script, "completion"]);
   return { ...decide(before, current, intent, pr.ok, pr.message, base), current };
 }
 
@@ -66,11 +68,11 @@ export function recovery(state, result, quality) {
     : quality.phase === "review"
       ? "Reuse the successful standard evidence for the unchanged candidate. Inspect any prior reviewer result; fix material findings and recheck only as needed. Use the remaining allowed independent review attempt, not a duplicate review loop."
       : quality.check === "passed"
-        ? "Resume remaining acceptance or delivery steps. Reuse successful checks on unchanged source; do not repeat builds, tests or reviews solely because this continuation ran."
+        ? "The candidate is checked. If acceptance is complete, prepare delivery.json only if missing and invoke exactly python3 .flutter-harness/bin/harness.py deliver with owner approval. The CLI reconciles remote state and writes the receipt; do not run separate Git/PR probes, and do not repeat builds, tests or reviews."
         : "Resume the unfinished implementation or plan from current files. Run focused checks on missing behavior, then the required final check; do not publish incomplete work.";
   return { stop: false, reason, fingerprint, prompt:
     "[Flutter Harness recovery] " + reason + ". " + step +
     " Preserve unrelated changes and any task manifest. A failed check is work to fix, not an external blocker. " +
     "Do not escalate to Sol because of failure. If permission is denied or recovery cannot progress, state the exact blocker; preserve work. " +
-    "After required evidence passes, run the canonical Harness deliver operation with approval and the task manifest. Never bypass checks or claim DONE without a verified PR." };
+    "Never bypass checks or claim DONE without a current delivery receipt." };
 }

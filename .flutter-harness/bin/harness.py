@@ -90,6 +90,14 @@ def work(root):
     return root / ".flutter-harness/work"
 
 
+def event(root, stage, **details):
+    """Append only structured lifecycle facts, never prompts or command output."""
+    path = work(root) / "lifecycle.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"at": int(time.time() * 1000), "stage": stage, **details}) + "\n")
+
+
 def paths(data):
     return [os.fsdecode(p) for p in data.split(b"\0") if p]
 
@@ -150,11 +158,12 @@ def begin(root, c, name):
     current = text(git(root, "symbolic-ref", "--short", "HEAD"))
     if current != name:
         git(root, "switch", "-c", name, "origin/" + base)
-        for filename in ("check.json","delivery.json","delivery-result.json","runtime.json","sessions.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
+        for filename in ("check.json","delivery.json","delivery-result.json","delivery-state.json","runtime.json","sessions.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
             (work(root)/filename).unlink(missing_ok=True)
     require(text(git(root, "merge-base", "HEAD", "origin/" + base)) ==
             text(git(root, "rev-parse", "origin/" + base)),
             "Feature branch does not contain current integration base")
+    event(root, "begin", branch=name, base=base)
     output(status="PASS", branch=name, base=base)
 
 
@@ -186,6 +195,7 @@ def doctor(root, c, operation):
 def check(root, c):
     receipt = work(root) / "check.json"
     receipt.unlink(missing_ok=True)
+    event(root, "check-start")
     require((root / ".flutter-harness/product.json").is_file(), "Missing product policy configuration")
     run(root, "flutter", "pub", "get", log=work(root) / "pub-get.log")
     run(root, "dart", "format", "lib", "test", log=work(root) / "format.log")
@@ -204,6 +214,7 @@ def check(root, c):
             {"format","product","analyze","flutter-tests"}, "Incomplete standard runner evidence")
     atomic_json(receipt, {"digest": before, "status": "PASS", "checks":checks,
                           "report":str(reports[0]), "checked_at": int(time.time())})
+    event(root, "check-pass", digest=before)
     output(status="PASS", digest=before, receipt=str(receipt))
 
 
@@ -219,7 +230,7 @@ def origin_repo(root):
 def pr_list(root, repo, name):
     data = json.loads(run(root, "gh", "pr", "list", "--repo", repo,
                           "--head", name, "--state", "open",
-                          "--json", "number,baseRefName,headRefName,headRepositoryOwner,isCrossRepository,isDraft",
+                          "--json", "number,baseRefName,headRefName,headRepositoryOwner,isCrossRepository,isDraft,headRefOid,state,url,title,body",
                           capture=True, timeout=60))
     require(isinstance(data, list), "Invalid GitHub PR response")
     own = [p for p in data if p.get("headRefName") == name and
@@ -230,25 +241,53 @@ def pr_list(root, repo, name):
     return own[0] if own else None
 
 
-def verify(root, c):
-    base = c["integration_branch"]
-    name = branch(root, base)
-    repo = origin_repo(root)
-    pr = pr_list(root, repo, name)
-    require(pr and pr.get("baseRefName") == base, "No open PR into configured base")
-    data = json.loads(run(root, "gh", "pr", "view", str(pr["number"]),
-                          "--repo", repo, "--json",
-                          "url,state,baseRefName,headRefName,headRefOid,isDraft,isCrossRepository",
-                          capture=True, timeout=60))
-    head = text(git(root, "rev-parse", "HEAD"))
-    require(data.get("state") == "OPEN" and data.get("baseRefName") == base and
-            data.get("headRefName") == name and data.get("headRefOid") == head and
-            not data.get("isCrossRepository") and not data.get("isDraft"),
-            "PR is draft, stale, closed, cross-repo or targets the wrong branch")
-    require(data.get("url", "").lower().startswith("https://github.com/" + repo.lower() + "/pull/"),
+def validate_remote_pr(pr, repo, base, name, head):
+    require(pr and pr.get("state") == "OPEN" and pr.get("baseRefName") == base and
+            pr.get("headRefName") == name and pr.get("headRefOid") == head and
+            not pr.get("isCrossRepository") and not pr.get("isDraft"),
+            "PR missing, draft, stale, closed, cross-repo or targets the wrong branch")
+    require(pr.get("url", "").lower().startswith("https://github.com/" + repo.lower() + "/pull/"),
             "Unexpected PR URL")
-    output(status="PASS", pr=data["url"], head=head)
-    return data
+    return pr
+
+
+def manifest_digest(manifest):
+    return hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode()).hexdigest()
+
+
+def completion(root, c):
+    """Local evidence of an exact candidate previously verified against GitHub.
+    No network call. Use verify for an explicit fresh remote read."""
+    name = branch(root, c["integration_branch"])
+    require(not dirty(root), "Uncommitted work remains")
+    digest = fingerprint(root)
+    head = text(git(root, "rev-parse", "HEAD"))
+    receipt = read_json(work(root) / "check.json")
+    require(receipt.get("status") == "PASS" and receipt.get("digest") == digest,
+            "Missing/stale standard check receipt")
+    path = work(root) / "delivery-result.json"
+    require(path.is_file(), "Missing delivery-result.json; resume canonical deliver")
+    result = read_json(path)
+    manifest = read_json(work(root) / "delivery.json")
+    require(all(result.get(k) == v for k, v in {
+        "status": "PASS", "head": head, "digest": digest, "branch": name,
+        "base": c["integration_branch"], "repo": origin_repo(root),
+        "manifest_digest": manifest_digest(manifest), "checked_at": receipt.get("checked_at"),
+    }.items()) and isinstance(result.get("delivered_at"), int),
+            "Missing/stale delivery evidence; resume canonical deliver")
+    require(result.get("pr", "").lower().startswith("https://github.com/" + result["repo"].lower() + "/pull/"),
+            "Invalid delivery PR URL")
+    return result
+
+
+def verify(root, c):
+    result = completion(root, c)
+    pr = validate_remote_pr(pr_list(root, result["repo"], result["branch"]),
+                            result["repo"], result["base"], result["branch"], result["head"])
+    require(pr["url"] == result["pr"], "Remote PR differs from delivery receipt")
+    output(status="PASS", pr=pr["url"], head=result["head"])
+    return pr
 
 
 def deliver(root, c):
@@ -293,6 +332,12 @@ def deliver(root, c):
     existing = pr_list(root, repo, name)
     require(not existing or existing.get("baseRefName") == base,
             "Existing PR targets another base")
+    identity = {"branch": name, "base": base, "repo": repo, "digest": digest,
+                "manifest_digest": manifest_digest(manifest)}
+    def checkpoint(stage, **extra):
+        atomic_json(work(root) / "delivery-state.json", {**identity, "stage": stage, **extra})
+        event(root, stage, **identity, **extra)
+    checkpoint("delivery-validated")
     if changed:
         git(root, "--literal-pathspecs", "add", "-A", "--", *files)
         staged = paths(git(root, "diff", "--cached", "--no-renames",
@@ -306,22 +351,47 @@ def deliver(root, c):
             "Commit does not match checked working candidate")
     require(git(root, "diff", "--name-only", "origin/" + base, "HEAD"),
             "No task change to publish")
-    git(root, "push", "-u", "origin", "HEAD:refs/heads/" + name)
+    head = text(git(root, "rev-parse", "HEAD"))
+    checkpoint("delivery-committed", head=head)
     body = work(root) / "pr-body.md"
     summary = ["", "", "## Harness evidence (generated)", f"- Candidate: {digest}", "- Standard check: PASS"]
     for platform in required_e2e:
         summary.append(f"- Required {platform} E2E: PASS")
-    body.write_text(manifest["body"].rstrip() + "\n".join(summary) + "\n", encoding="utf-8")
-    if existing:
-        run(root, "gh", "pr", "edit", str(existing["number"]), "--repo", repo,
-            "--title", manifest["title"], "--body-file", str(body))
-        if existing.get("isDraft"):
-            run(root, "gh", "pr", "ready", str(existing["number"]), "--repo", repo)
-    else:
-        run(root, "gh", "pr", "create", "--repo", repo, "--base", base,
-            "--head", name, "--title", manifest["title"], "--body-file", str(body))
-    pr = verify(root, c)
-    atomic_json(work(root) / "delivery-result.json", {"status": "PASS", "head": text(git(root, "rev-parse", "HEAD")), "pr": pr["url"], "digest": digest, "checked_at": receipt.get("checked_at"), "delivered_at": int(time.time())})
+    expected_body = manifest["body"].rstrip() + "\n".join(summary) + "\n"
+    body.write_text(expected_body, encoding="utf-8")
+    def matching(pr):
+        return (pr and pr.get("headRefOid") == head and
+                pr.get("title") == manifest["title"] and
+                (pr.get("body") or "").rstrip() == expected_body.rstrip() and
+                not pr.get("isDraft"))
+    # Recover a completed remote operation even if the previous process died
+    # before writing its local receipt. Never republish an identical PR.
+    if not existing or existing.get("headRefOid") != head:
+        git(root, "push", "-u", "origin", "HEAD:refs/heads/" + name)
+    checkpoint("delivery-pushed", head=head)
+    if not matching(existing):
+        if existing:
+            if (existing.get("title") != manifest["title"] or
+                    (existing.get("body") or "").rstrip() != expected_body.rstrip()):
+                run(root, "gh", "pr", "edit", str(existing["number"]), "--repo", repo,
+                    "--title", manifest["title"], "--body-file", str(body))
+            if existing.get("isDraft"):
+                run(root, "gh", "pr", "ready", str(existing["number"]), "--repo", repo)
+        else:
+            run(root, "gh", "pr", "create", "--repo", repo, "--base", base,
+                "--head", name, "--title", manifest["title"], "--body-file", str(body))
+        existing = pr_list(root, repo, name)
+    pr = validate_remote_pr(existing, repo, base, name, head)
+    require(matching(pr), "Remote PR metadata differs from delivery manifest")
+    checkpoint("delivery-remote-verified", head=head, pr=pr["url"])
+    require(not dirty(root) and fingerprint(root) == digest and
+            text(git(root, "rev-parse", "HEAD")) == head,
+            "Candidate changed during delivery")
+    result = {**identity, "status": "PASS", "head": head, "pr": pr["url"],
+              "checked_at": receipt.get("checked_at"), "delivered_at": int(time.time())}
+    atomic_json(work(root) / "delivery-result.json", result)
+    checkpoint("delivery-complete", head=head, pr=pr["url"])
+    output(**result)
 
 
 def scaffold(root, name, layers):
@@ -461,7 +531,7 @@ def e2e(root, platform, scenario, device):
     output(status="PASS", receipt=str(receipt))
 
 
-def usage(root, sessions):
+def usage(root, sessions, *, emit=True):
     with tempfile.TemporaryDirectory() as tmp:
         exports = []
         for i, session in enumerate(sessions):
@@ -469,7 +539,33 @@ def usage(root, sessions):
             path.write_bytes(run(root, "opencode", "session", "export", session,
                                  "--sanitize", capture=True, timeout=120))
             exports.append(str(path))
-        run(root, sys.executable, str(HERE / "session-usage.py"), "--json", *exports)
+        summary = json.loads(run(root, sys.executable, str(HERE / "session-usage.py"), "--json", *exports, capture=True))
+        if emit:
+            print(json.dumps(summary, indent=2))
+        return summary
+
+
+def diagnostics(root, sessions):
+    """One safe, compact report; sanitized exports are temporary."""
+    summary = usage(root, sessions, emit=False)
+    data = {"usage": summary, "artifacts": {}}
+    for name in ("check.json", "delivery-state.json", "delivery-result.json", "sessions.json"):
+        path = work(root) / name
+        if path.is_file():
+            data["artifacts"][name] = read_json(path)
+    path = work(root) / "lifecycle.jsonl"
+    events = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            item = json.loads(line)
+            if item.get("session") in sessions or any(
+                    start <= item.get("at", 0) <= end
+                    for start, end in summary["session_windows"]):
+                events.append(item)
+    data["events"] = events
+    target = work(root) / "diagnostics.json"
+    atomic_json(target, data)
+    output(status="PASS", report=str(target))
 
 
 def main():
@@ -480,7 +576,7 @@ def main():
     p.add_argument("operation", choices=("check","deliver","android","ios","web","e2e"))
     p = sub.add_parser("begin")
     p.add_argument("branch")
-    for cmd in ("check","ci","deliver","verify","status","fingerprint","stop-preview","adopt","visual-evidence"):
+    for cmd in ("check","ci","deliver","verify","completion","status","fingerprint","stop-preview","adopt","visual-evidence"):
         sub.add_parser(cmd)
     p = sub.add_parser("scaffold")
     p.add_argument("name")
@@ -497,8 +593,9 @@ def main():
     p.add_argument("platform", choices=("android","ios","web"))
     p.add_argument("scenario")
     p.add_argument("--device")
-    p = sub.add_parser("usage")
-    p.add_argument("sessions", nargs="*")
+    for cmd in ("usage", "diagnostics"):
+        p = sub.add_parser(cmd)
+        p.add_argument("sessions", nargs="*")
     a = parser.parse_args()
     root = a.project.resolve()
     try:
@@ -523,6 +620,8 @@ def main():
             deliver(root, c)
         elif a.command == "verify":
             verify(root, c)
+        elif a.command == "completion":
+            output(**completion(root, c))
         elif a.command == "status":
             receipt = work(root) / "check.json"
             digest = fingerprint(root)
@@ -543,12 +642,20 @@ def main():
             run(root, sys.executable, str(HERE / "web-preview.py"), "stop")
         elif a.command == "e2e":
             e2e(root, a.platform, a.scenario, a.device)
-        elif a.command == "usage":
+        elif a.command in ("usage", "diagnostics"):
             sessions = a.sessions or read_json(work(root)/"sessions.json")["sessions"]
             require(sessions, "No recorded sessions")
-            usage(root, sessions)
+            if a.command == "diagnostics":
+                diagnostics(root, sessions)
+            else:
+                usage(root, sessions)
         return 0
     except (Blocked, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
+        if a.command in ("check", "deliver"):
+            try:
+                event(root, a.command + "-blocked", error_type=type(exc).__name__)
+            except OSError:
+                pass
         print(f"BLOCKED: {exc}", file=sys.stderr)
         return 3
 
