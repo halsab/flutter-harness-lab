@@ -12,6 +12,23 @@ Finder get _taskInputField => find.descendant(
   of: find.bySemanticsIdentifier('task-input'),
   matching: find.byType(TextField),
 );
+Finder get _addTaskFab => find.descendant(
+  of: find.bySemanticsIdentifier('add-task'),
+  matching: find.byType(FloatingActionButton),
+);
+
+Future<void> _openAddTask(WidgetTester tester) async {
+  await tester.ensureVisible(_addTaskFab);
+  await tester.tap(_addTaskFab);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapAddTask(WidgetTester tester) async {
+  await tester.pump();
+  final addButton = find.widgetWithText(FilledButton, 'Добавить');
+  await tester.ensureVisible(addButton);
+  await tester.tap(addButton);
+}
 
 Future<void> _openSort(WidgetTester tester, String selectedLabel) async {
   await tester.tap(find.bySemanticsIdentifier('task-sort-menu'));
@@ -54,13 +71,21 @@ void main() {
     expect(find.text('Добавьте первую задачу'), findsOneWidget);
     expect(find.text('Незавершённых задач: 0'), findsOneWidget);
 
+    await _openAddTask(tester);
     final input = find.bySemanticsIdentifier('task-input');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
+    await tester.tap(find.text('Отмена'));
     await tester.pump();
     expect(find.text('Задач пока нет'), findsOneWidget);
 
+    await _openAddTask(tester);
     await tester.enterText(input, '   ');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Добавить'))
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.text('Отмена'));
     await tester.pump();
 
     expect(find.text('Задач пока нет'), findsOneWidget);
@@ -330,14 +355,17 @@ void main() {
     await tester.pumpWidget(MyApp(repository: repository));
     await tester.pumpAndSettle();
 
-    final input = find.bySemanticsIdentifier('task-input');
+    await _openAddTask(tester);
+    var input = find.bySemanticsIdentifier('task-input');
     await tester.enterText(input, 'First task');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
-
-    await tester.enterText(input, 'Second task');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
+    await _tapAddTask(tester);
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
+
+    await _openAddTask(tester);
+    input = find.bySemanticsIdentifier('task-input');
+    await tester.enterText(input, 'Second task');
+    await _tapAddTask(tester);
+    await tester.pumpAndSettle();
 
     final tasks = await repository.loadTasks();
     expect(tasks, hasLength(2));
@@ -459,18 +487,7 @@ void main() {
     final delayedRepository = _DelayedTaskRepository();
     await tester.pumpWidget(MyApp(repository: delayedRepository));
 
-    expect(tester.widget<TextField>(_taskInputField).enabled, isFalse);
-    expect(
-      tester
-          .widget<IconButton>(
-            find.descendant(
-              of: find.bySemanticsIdentifier('add-task'),
-              matching: find.byType(IconButton),
-            ),
-          )
-          .onPressed,
-      isNull,
-    );
+    expect(tester.widget<FloatingActionButton>(_addTaskFab).onPressed, isNull);
 
     delayedRepository.completeLoad([
       const TaskItem(id: 'saved', title: 'Saved before startup'),
@@ -478,7 +495,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Saved before startup'), findsOneWidget);
-    expect(tester.widget<TextField>(_taskInputField).enabled, isTrue);
+    expect(
+      tester.widget<FloatingActionButton>(_addTaskFab).onPressed,
+      isNotNull,
+    );
   });
 
   testWidgets('shows retry after storage initialization fails', (tester) async {
@@ -503,10 +523,10 @@ void main() {
     await tester.pumpWidget(MyApp(repository: flakyRepository));
     await tester.pumpAndSettle();
 
+    await _openAddTask(tester);
     final input = find.bySemanticsIdentifier('task-input');
-    final addButton = find.bySemanticsIdentifier('add-task');
     await tester.enterText(input, 'Retry this task');
-    await tester.tap(addButton);
+    await _tapAddTask(tester);
     await tester.pumpAndSettle();
 
     expect(find.text('Не удалось сохранить задачи'), findsOneWidget);
@@ -517,12 +537,12 @@ void main() {
     expect(find.byType(Checkbox), findsNothing);
     expect(flakyRepository.tasks, isEmpty);
 
-    await tester.tap(addButton);
+    await _tapAddTask(tester);
     await tester.pumpAndSettle();
 
     expect(flakyRepository.tasks.single.title, 'Retry this task');
     expect(find.byType(Checkbox), findsOneWidget);
-    expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
+    expect(find.bySemanticsIdentifier('task-input'), findsNothing);
   });
 
   testWidgets('serializes writes when rapid actions overlap', (tester) async {
@@ -531,20 +551,22 @@ void main() {
     await tester.pumpWidget(MyApp(repository: delayedRepository));
     await tester.pumpAndSettle();
 
-    final input = find.bySemanticsIdentifier('task-input');
+    await _openAddTask(tester);
+    var input = find.bySemanticsIdentifier('task-input');
     await tester.enterText(input, 'First write');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
+    await _tapAddTask(tester);
     await tester.pump();
     await delayedRepository.firstWriteStarted.future;
-
-    await tester.enterText(input, 'Second write');
-    await tester.tap(find.bySemanticsIdentifier('add-task'));
-    await tester.pump();
-    expect(delayedRepository.startedTitles, ['First write']);
 
     delayedRepository.releaseFirstWrite.complete();
     await tester.pumpAndSettle();
 
+    expect(delayedRepository.startedTitles, ['First write']);
+    await _openAddTask(tester);
+    input = find.bySemanticsIdentifier('task-input');
+    await tester.enterText(input, 'Second write');
+    await _tapAddTask(tester);
+    await tester.pumpAndSettle();
     expect(delayedRepository.startedTitles, ['First write', 'Second write']);
     expect(delayedRepository.tasks.map((task) => task.title), [
       'First write',
@@ -567,21 +589,21 @@ void main() {
     await tester.pumpWidget(MyApp(repository: delayedRepository));
     await tester.pumpAndSettle();
 
+    await _openAddTask(tester);
     final input = find.bySemanticsIdentifier('task-input');
-    final addButton = find.bySemanticsIdentifier('add-task');
     await tester.enterText(input, 'First write');
-    await tester.tap(addButton);
+    await _tapAddTask(tester);
     await tester.pump();
     await delayedRepository.firstWriteStarted.future;
 
-    await tester.tap(addButton);
+    await _tapAddTask(tester);
     await tester.pump();
     delayedRepository.releaseFirstWrite.complete();
     await tester.pumpAndSettle();
 
     expect(delayedRepository.startedTitles, ['First write']);
     expect(delayedRepository.tasks, hasLength(1));
-    expect(tester.widget<TextField>(_taskInputField).controller!.text, isEmpty);
+    expect(find.bySemanticsIdentifier('task-input'), findsNothing);
   });
 
   testWidgets('keeps the form usable with a keyboard inset and short height', (
@@ -599,12 +621,11 @@ void main() {
     await tester.pumpWidget(MyApp(repository: layoutRepository));
     await tester.pumpAndSettle();
 
+    await _openAddTask(tester);
     final input = find.bySemanticsIdentifier('task-input');
-    final addButton = find.bySemanticsIdentifier('add-task');
     await tester.ensureVisible(input);
     await tester.enterText(input, 'Short screen task');
-    await tester.ensureVisible(addButton);
-    await tester.tap(addButton);
+    await _tapAddTask(tester);
     await tester.pumpAndSettle();
 
     expect(layoutRepository.addAttempts, 1);

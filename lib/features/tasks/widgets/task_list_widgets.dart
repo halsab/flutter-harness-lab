@@ -222,3 +222,55 @@ class EditTaskDialogState extends State<EditTaskDialog> {
     }
   }
 }
+
+class AddTaskDialog extends StatefulWidget {
+  const AddTaskDialog({super.key, required this.onAdd, required this.onCancel});
+
+  final ValueChanged<String> onAdd;
+  final VoidCallback onCancel;
+
+  @override
+  State<AddTaskDialog> createState() => _AddTaskDialogState();
+}
+
+class _AddTaskDialogState extends State<AddTaskDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Добавить задачу'),
+    scrollable: true,
+    content: Semantics(
+      identifier: 'task-input',
+      child: TextField(
+        controller: _controller,
+        autofocus: true,
+        textInputAction: TextInputAction.done,
+        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => _add(),
+        decoration: const InputDecoration(
+          labelText: 'Название задачи',
+          prefixIcon: Icon(Icons.add_task),
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: widget.onCancel, child: const Text('Отмена')),
+      FilledButton(
+        onPressed: _controller.text.trim().isEmpty ? null : _add,
+        child: const Text('Добавить'),
+      ),
+    ],
+  );
+
+  void _add() {
+    final title = _controller.text.trim();
+    if (title.isNotEmpty) widget.onAdd(title);
+  }
+}
