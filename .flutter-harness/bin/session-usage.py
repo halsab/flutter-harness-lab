@@ -23,9 +23,17 @@ def summarize(exports):
         "usage": {name: 0 for name in FIELDS},
         "by_model": {},
         "tool_calls": {},
+        "provider_errors": {},
+        "tool_errors": {},
+        "retry_events": 0,
+        "synthetic_continuations": 0,
+        "session_windows": [],
+        "tool_duration_ms": 0,
     }
     models = defaultdict(lambda: {"messages": 0, **{name: 0 for name in FIELDS}})
     tools = Counter()
+    provider_errors = Counter()
+    tool_errors = Counter()
     seen_sessions = set()
 
     for data in exports:
@@ -36,10 +44,19 @@ def summarize(exports):
         if session_id:
             seen_sessions.add(session_id)
         result["sessions"] += 1
+        timing = info.get("time") or {}
+        if isinstance(timing.get("created"), int) and isinstance(timing.get("idle", timing.get("updated")), int):
+            result["session_windows"].append([timing["created"], timing.get("idle", timing.get("updated"))])
 
         for message in data.get("messages", []):
+            if message.get("type") == "synthetic":
+                result["synthetic_continuations"] += 1
             if message.get("type") != "assistant":
                 continue
+            if message.get("error"):
+                provider_errors[str(message["error"].get("type") or "unknown")] += 1
+            if message.get("retry"):
+                result["retry_events"] += 1
             model = message.get("model") or {}
             if not model.get("id"):
                 continue
@@ -68,10 +85,18 @@ def summarize(exports):
                 result["usage"][name] += int(value)
             for part in message.get("content") or []:
                 if part.get("type") == "tool":
-                    tools[str(part.get("name") or "unknown")] += 1
+                    name = str(part.get("name") or "unknown")
+                    tools[name] += 1
+                    if (part.get("state") or {}).get("status") == "error":
+                        tool_errors[name] += 1
+                    timing = part.get("time") or {}
+                    if isinstance(timing.get("ran"), int) and isinstance(timing.get("completed"), int):
+                        result["tool_duration_ms"] += max(0, timing["completed"] - timing["ran"])
 
     result["by_model"] = dict(sorted(models.items()))
     result["tool_calls"] = dict(sorted(tools.items()))
+    result["provider_errors"] = dict(sorted(provider_errors.items()))
+    result["tool_errors"] = dict(sorted(tool_errors.items()))
     return result
 
 
