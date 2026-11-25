@@ -31,14 +31,19 @@ TaskListView deriveTaskListView(
   required String searchQuery,
   required TaskSort sort,
 }) {
-  final normalizedQuery = searchQuery.trim().toLowerCase();
+  final queryWords = searchQuery
+      .toLowerCase()
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty);
   final visibleTasks = tasks.where((task) {
     final matchesFilter = switch (filter) {
       TaskFilter.all => true,
       TaskFilter.active => !task.isCompleted,
       TaskFilter.completed => task.isCompleted,
     };
-    return matchesFilter && task.title.toLowerCase().contains(normalizedQuery);
+    final normalizedTitle = task.title.toLowerCase();
+    final matchesSearch = queryWords.every(normalizedTitle.contains);
+    return matchesFilter && matchesSearch;
   }).toList();
   switch (sort) {
     case TaskSort.defaultOrder:
