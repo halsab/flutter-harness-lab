@@ -27,8 +27,9 @@ export default Plugin.define({
       await writeFile(tmp, JSON.stringify({sessions:await resources.sessions(id)}));
       await rename(tmp,target);
     }
-    const resources = await registerResourceGuard(ctx, key);
-    const quality = await registerQualityGate(ctx, root, "origin/" + base, key, undefined, resources.status);
+    let quality;
+    const resources = await registerResourceGuard(ctx, key, id=>quality.inputs(id), (event,input)=>quality.prepareReview(event,input));
+    quality = await registerQualityGate(ctx, root, "origin/" + base, key, undefined, resources.status, true, resources.reviewAvailability);
     await ctx.session.hook("prompt", async (event) => {
       const session = await ctx.session.get({ sessionID: event.sessionID });
       if (session.parentID) return;
@@ -62,6 +63,7 @@ export default Plugin.define({
         await resources.clear(id);
         return;
       }
+      if (evidence.phase === "waiting") return;
       const next = recovery(state, result, evidence);
       await saveSessions(id);
       await record(id, next.stop ? "task-incomplete" : "task-recovery", {attempts:state.attempts, phase:evidence.phase, check:evidence.check});

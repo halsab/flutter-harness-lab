@@ -105,6 +105,7 @@ def start(project, state_file, log_file):
         else:
             state_file.unlink(missing_ok=True)
             print("Discarded stale server metadata; no process terminated")
+    log_file = log_file.with_name("web-preview-" + str(time.time_ns()) + ".log")
     log_file.parent.mkdir(parents=True, exist_ok=True)
     print("Building Flutter Web for Playwright without Chrome debugger...", flush=True)
     with log_file.open("w", encoding="utf-8") as log:

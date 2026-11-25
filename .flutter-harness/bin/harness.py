@@ -2,6 +2,8 @@
 """Deterministic Flutter lifecycle; no model calls or shell interpolation."""
 import argparse
 import csv
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -9,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -34,6 +37,7 @@ def run(root, *args, capture=False, timeout=600, log=None, env=None):
             result = subprocess.run(args, cwd=root, stdout=stream,
                                     stderr=subprocess.STDOUT, timeout=timeout, env=env)
         if result.returncode:
+            event(root, "command-failed", executable=args[0], exit=result.returncode, log=str(log.relative_to(root)))
             raise Blocked(f"{args[0]} exit={result.returncode}; log={log}")
         return ""
     result = subprocess.run(args, cwd=root, capture_output=capture,
@@ -158,7 +162,7 @@ def begin(root, c, name):
     current = text(git(root, "symbolic-ref", "--short", "HEAD"))
     if current != name:
         git(root, "switch", "-c", name, "origin/" + base)
-        for filename in ("check.json","delivery.json","delivery-result.json","delivery-state.json","runtime.json","sessions.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
+        for filename in ("check.json","delivery.json","delivery-result.json","delivery-state.json","runtime.json","visual-plan.json","visual-preflight.json","sessions.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
             (work(root)/filename).unlink(missing_ok=True)
     require(text(git(root, "merge-base", "HEAD", "origin/" + base)) ==
             text(git(root, "rev-parse", "origin/" + base)),
@@ -168,6 +172,9 @@ def begin(root, c, name):
 
 
 def doctor(root, c, operation):
+    if operation == "visual":
+        visual_preflight(root, c)
+        return
     needed = {"check": ("git", "flutter", "dart", "python3"),
               "deliver": ("git", "gh"), "android": ("flutter", "adb"),
               "ios": ("flutter", "xcrun"), "web": ("flutter", "npx"),
@@ -197,12 +204,14 @@ def check(root, c):
     receipt.unlink(missing_ok=True)
     event(root, "check-start")
     require((root / ".flutter-harness/product.json").is_file(), "Missing product policy configuration")
-    run(root, "flutter", "pub", "get", log=work(root) / "pub-get.log")
-    run(root, "dart", "format", "lib", "test", log=work(root) / "format.log")
+    logs = Path(tempfile.mkdtemp(prefix="prepare-", dir=work(root)))
+    run(root, "flutter", "pub", "get", log=logs / "pub-get.log")
+    run(root, "dart", "format", "lib", "test", log=logs / "format.log")
     before = fingerprint(root)
     # Unique artifact directory prevents collisions between runs/checkouts.
     artifact_dir = Path(tempfile.mkdtemp(prefix="standard-", dir=work(root)))
     environment = dict(os.environ, HARNESS_ARTIFACTS_DIR=str(artifact_dir))
+    event(root, "check-run", artifacts=str(artifact_dir.relative_to(root)))
     # Keep short runner stdout visible for the OpenCode quality hook.
     run(root, "bash", str(HERE / "check.sh"), ".", "standard", c["profile"], env=environment, timeout=2400)
     require(fingerprint(root) == before, "Check inputs changed during verification")
@@ -411,13 +420,100 @@ def scaffold(root, name, layers):
     output(status="PASS", feature=name, layers=layers)
 
 
+def png_size(data):
+    require(len(data) >= 33 and data.startswith(PNG) and data[12:16] == b"IHDR",
+            "Invalid PNG header")
+    width, height = struct.unpack(">II", data[16:24])
+    require(width > 0 and height > 0, "Invalid PNG dimensions")
+    return [width, height]
+
+
+@contextmanager
+def target_lock(platform, device):
+    # OS releases the lock if a capture process dies. Per-user, per-device,
+    # across project checkouts. No concurrent theme change/capture via CLI.
+    key = hashlib.sha256((platform + ":" + device).encode()).hexdigest()
+    folder = Path(tempfile.gettempdir()) / ("flutter-harness-" + str(os.getuid()))
+    folder.mkdir(mode=0o700, exist_ok=True)
+    with (folder / (key + ".lock")).open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Blocked("Runtime target busy; wait for the current capture/launch")
+        yield
+
+
+def probe_runtime(root, platform, device=None):
+    with tempfile.TemporaryDirectory() as temp:
+        image = Path(temp) / "probe.png"
+        if platform == "android":
+            require(device and not device.startswith("-"), "Explicit emulator ID required")
+            require(text(run(root, "adb", "-s", device, "shell", "getprop",
+                             "ro.kernel.qemu", capture=True, timeout=15)) == "1",
+                    "Not an Android emulator")
+            require(text(run(root, "adb", "-s", device, "shell", "getprop",
+                             "sys.boot_completed", capture=True, timeout=15)) == "1",
+                    "Android emulator not booted")
+            image.write_bytes(run(root, "adb", "-s", device, "exec-out", "screencap",
+                                  "-p", capture=True, timeout=15))
+        elif platform == "ios":
+            require(device and not device.startswith("-"), "Explicit simulator ID required")
+            run(root, "xcrun", "simctl", "getenv", device, "HOME", capture=True, timeout=15)
+            run(root, "xcrun", "simctl", "io", device, "screenshot", str(image),
+                capture=True, timeout=20)
+        else:
+            # Probe the actual installed browser, not merely the npx executable.
+            # --no-install prevents opportunistic downloads.
+            run(root, "npx", "--no-install", "playwright", "screenshot",
+                "--browser=chromium", "about:blank", str(image), capture=True, timeout=30)
+        return png_size(image.read_bytes())
+
+
+def visual_preflight(root, c):
+    devices = json.loads(run(root, "flutter", "devices", "--machine", capture=True, timeout=60))
+    require(isinstance(devices, list), "Invalid Flutter device discovery")
+    ready, unavailable = [], []
+    targets = []
+    for device in devices:
+        target = device.get("id")
+        platform = str(device.get("targetPlatform", ""))
+        if device.get("emulator") is True and isinstance(target, str):
+            if platform.startswith("android"):
+                targets.append(("android", target))
+            elif platform == "ios":
+                targets.append(("ios", target))
+    # Native simulators support inspection of live interactive state.
+    # A headless browser is the fallback, not a reason to build Web first.
+    targets.sort(key=lambda item: (item[0] != "ios", item[1]))
+    if c["profile"] == "mobile-web":
+        targets.append(("web", None))
+    for platform, target in targets:
+        try:
+            dimensions = probe_runtime(root, platform, target)
+            ready.append({"platform": platform, "device": target, "size": dimensions})
+        except (Blocked, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            # Raw stderr may contain local details; keep it in the local report,
+            # not in the compact exported lifecycle log.
+            unavailable.append({"platform": platform, "device": target, "reason": str(exc)[:800]})
+    report = {"status": "PASS" if ready else "BLOCKED", "ready": ready, "unavailable": unavailable,
+              "branch":text(git(root,"branch","--show-current")), "digest":fingerprint(root)}
+    atomic_json(work(root) / "visual-preflight.json", report)
+    event(root, "visual-preflight", ready=[x["platform"] for x in ready],
+          unavailable=[x["platform"] for x in unavailable])
+    output(**report)
+    require(ready, "No capture-capable simulator/browser; do not start visual implementation blindly")
+
+
 def launch(root, c, platform, device):
     require(platform != "web" or c["profile"] == "mobile-web", "Web disabled")
     digest = fingerprint(root)
     receipt = work(root) / "runtime.json"
     previous = read_json(receipt) if receipt.exists() else {}
+    receipt.unlink(missing_ok=True)
+    event(root, "runtime-launch-start", platform=platform, digest=digest)
     if platform == "web":
-        # Reuse a healthy server only for identical source; no speculative rebuild.
+        # Fail on missing Chromium before expensive Flutter Web compilation.
+        probe_runtime(root, platform)
         action = "status" if previous.get("digest") == digest and previous.get("platform") == "web" else "start"
         try:
             result = text(run(root, sys.executable, str(HERE / "web-preview.py"),
@@ -432,19 +528,21 @@ def launch(root, c, platform, device):
         device = match.group(1)
     else:
         require(device and not device.startswith("-"), "Explicit emulator/simulator ID required")
-        if platform == "android":
-            require(text(run(root,"adb","-s",device,"shell","getprop","ro.kernel.qemu",capture=True)) == "1", "Use an Android emulator, not a physical device")
-        else:
-            run(root,"xcrun","simctl","getenv",device,"HOME",capture=True)
-        run(root, "flutter", "run", "--no-resident", "-d", device,
-            log=work(root) / "launch.log", timeout=900)
+        with target_lock(platform, device):
+            probe_runtime(root, platform, device)
+            folder = Path(tempfile.mkdtemp(prefix="launch-" + platform + "-", dir=work(root)))
+            log = folder / "launch.log"
+            event(root, "runtime-launch-log", platform=platform, log=str(log.relative_to(root)))
+            run(root, "flutter", "run", "--no-resident", "-d", device, log=log, timeout=900)
     require(fingerprint(root) == digest, "Runtime source changed during launch")
     atomic_json(receipt, {"digest": digest, "platform": platform, "device": device})
+    event(root, "runtime-ready", platform=platform, digest=digest)
     output(status="READY", platform=platform, target=device, digest=digest)
 
 
-def capture(root, platform, label, theme, viewport):
+def capture(root, platform, label, theme, viewport, settle=1.5, scenario=None):
     require(re.fullmatch(r"[a-zA-Z0-9_-]+", label), "Invalid capture label")
+    require(0.5 <= settle <= 5, "Settle must be between 0.5 and 5 seconds")
     current = read_json(work(root) / "runtime.json")
     digest = fingerprint(root)
     require(current.get("digest") == digest and current.get("platform") == platform,
@@ -453,53 +551,146 @@ def capture(root, platform, label, theme, viewport):
     directory = root / ".flutter-harness/previews" / digest
     directory.mkdir(parents=True, exist_ok=True)
     image = directory / (label + "-" + platform + "-" + theme + ".png")
-    image.unlink(missing_ok=True)
-    if platform == "android":
-        # Explicit target, not an arbitrary attached device. Theme label is
-        # requested metadata; the reviewer must inspect the actual image.
-        run(root, "adb", "-s", device, "shell", "cmd", "uimode", "night",
-            "yes" if theme == "dark" else "no")
-        time.sleep(1)
-        image.write_bytes(run(root, "adb", "-s", device, "exec-out", "screencap",
-                              "-p", capture=True))
-    elif platform == "ios":
-        run(root, "xcrun", "simctl", "ui", device, "appearance", theme)
-        time.sleep(1)
-        run(root, "xcrun", "simctl", "io", device, "screenshot", str(image))
-    else:
-        require(re.fullmatch(r"\d+,\d+", viewport), "Viewport must be width,height")
-        run(root, "npx", "--no-install", "playwright", "screenshot",
-            "--viewport-size=" + viewport, "--color-scheme=" + theme, "--wait-for-timeout=1500",
-            device, str(image))
-    data = image.read_bytes()
-    require(data.startswith(PNG) and len(data) > 24 and fingerprint(root) == digest,
-            "Invalid or stale capture")
-    atomic_json(image.with_suffix(".json"), {"digest": digest, "platform": platform,
-                "target": device, "theme": theme, "viewport": viewport if platform == "web" else None,
-                "sha256": hashlib.sha256(data).hexdigest(), "path": str(image)})
+    if scenario:
+        path = Path(scenario)
+        require(not path.is_absolute() and ".." not in path.parts and
+                (root / path).is_file() and not (root / path).is_symlink(),
+                "Capture scenario must be a project-local file")
+    with target_lock(platform, device):
+        image.with_suffix(".json").unlink(missing_ok=True)
+        image.unlink(missing_ok=True)
+        if platform == "android":
+            run(root, "adb", "-s", device, "shell", "cmd", "uimode", "night",
+                "yes" if theme == "dark" else "no")
+        elif platform == "ios":
+            run(root, "xcrun", "simctl", "ui", device, "appearance", theme)
+        if platform in ("android", "ios"):
+            time.sleep(settle)
+            if scenario:
+                log = Path(tempfile.mkdtemp(prefix="capture-", dir=work(root))) / "scenario.log"
+                run(root, "bash", str(HERE / "maestro.sh"), "--device", device, "test",
+                    scenario, log=log, timeout=180)
+                time.sleep(settle)
+            if platform == "android":
+                image.write_bytes(run(root, "adb", "-s", device, "exec-out", "screencap",
+                                      "-p", capture=True))
+            else:
+                run(root, "xcrun", "simctl", "io", device, "screenshot", str(image))
+        else:
+            require(re.fullmatch(r"\d+,\d+", viewport), "Viewport must be width,height")
+            if scenario:
+                env = dict(os.environ, HARNESS_WEB_URL=device, HARNESS_CAPTURE_PATH=str(image),
+                           HARNESS_CAPTURE_THEME=theme, HARNESS_CAPTURE_VIEWPORT=viewport,
+                           HARNESS_CAPTURE_SETTLE_MS=str(int(settle * 1000)))
+                log = Path(tempfile.mkdtemp(prefix="capture-", dir=work(root))) / "scenario.log"
+                run(root, "npx", "--no-install", "playwright", "test", scenario,
+                    log=log, env=env, timeout=180)
+            else:
+                run(root, "npx", "--no-install", "playwright", "screenshot",
+                    "--viewport-size=" + viewport, "--color-scheme=" + theme,
+                    "--wait-for-timeout=" + str(int(settle * 1000)), device, str(image))
+        data = image.read_bytes()
+        size = png_size(data)
+        require(fingerprint(root) == digest, "Stale capture")
+        require(read_json(work(root) / "runtime.json") == current, "Runtime target changed during capture")
+        atomic_json(image.with_suffix(".json"), {"digest": digest, "label": label, "platform": platform,
+                    "target": device, "theme": theme, "viewport": viewport if platform == "web" else None,
+                    "size": size, "scenario": scenario, "sha256": hashlib.sha256(data).hexdigest(),
+                    "path": str(image)})
+    event(root, "visual-captured", platform=platform, label=label, theme=theme, digest=digest)
     output(status="CAPTURED", path=str(image), digest=digest)
 
 
-def visual_evidence(root):
+def visual_evidence(root, require_interaction=False):
+    """Validate receipt coverage, not aesthetic quality or truthful UI content."""
     digest = fingerprint(root)
+    plan_path = work(root) / "visual-plan.json"
+    require(plan_path.is_file(), "Missing visual-plan.json: declare populated screens and changed interaction states")
+    plan = read_json(plan_path)
+    platform = plan.get("platform")
+    require(platform in ("android", "ios", "web"), "Visual plan needs one representative platform")
+    require(isinstance(plan.get("fixture"), str) and plan["fixture"].strip(), "Describe representative isolated fixture data")
+    baseline = plan.get("baseline")
+    require(isinstance(baseline, dict), "Declare baseline digest/label or unavailable reason")
+    preflight_path = work(root) / "visual-preflight.json"
+    require(preflight_path.is_file(), "Run doctor visual before runtime work")
+    preflight = read_json(preflight_path)
+    require(preflight.get("status") == "PASS" and preflight.get("branch") == text(git(root,"branch","--show-current")),
+            "Visual preflight missing or from another task branch")
+    require(any(x.get("platform") == platform for x in preflight.get("ready", [])), "Planned platform did not pass runtime preflight")
+    scenarios = plan.get("scenarios")
+    require(isinstance(scenarios, list) and scenarios and len(scenarios) <= 12,
+            "Visual plan needs 1–12 relevant named scenarios")
+    labels = set()
+    for item in scenarios:
+        require(isinstance(item, dict) and isinstance(item.get("label"), str) and
+                re.fullmatch(r"[a-zA-Z0-9_-]+", item["label"]) and item["label"] not in labels and
+                item.get("kind") in ("screen", "interaction"), "Invalid or duplicate visual scenario")
+        labels.add(item["label"])
+        if platform == "web":
+            require(isinstance(item.get("viewport"), str) and re.fullmatch(r"\d+,\d+", item["viewport"]),
+                    "Each Web scenario needs its actual viewport")
+        else:
+            require(item.get("viewport") is None, "Native capture dimensions are read from the image")
+    require(any(s["kind"] == "screen" for s in scenarios), "Missing populated screen scenario")
+    require(not require_interaction or any(s["kind"] == "interaction" for s in scenarios),
+            "Substantial UI change requires a changed interaction scenario")
     folder = root / ".flutter-harness/previews" / digest
-    valid = []
-    for metadata in sorted(folder.glob("*.json")):
-        try:
-            item = read_json(metadata)
-            image = metadata.with_suffix(".png")
-            data = image.read_bytes()
-            if (item.get("digest") == digest and item.get("platform") in ("android","ios","web")
-                and item.get("theme") in ("light","dark")
-                and data.startswith(PNG) and hashlib.sha256(data).hexdigest() == item.get("sha256")):
-                valid.append(item)
-        except (OSError, ValueError, Blocked):
-            continue
-    groups = {(x["platform"], x.get("target"), x.get("viewport")) for x in valid}
-    require(any({x["theme"] for x in valid if (x["platform"], x.get("target"), x.get("viewport")) == key}
-                == {"light","dark"} for key in groups),
-            "Current candidate needs light/dark captures from one representative target")
-    output(status="PASS", digest=digest, captures=valid)
+    captures = []
+    targets = set()
+    for item in scenarios:
+        pair = []
+        for theme in ("light", "dark"):
+            path = folder / (item["label"] + "-" + platform + "-" + theme + ".png")
+            metadata = path.with_suffix(".json")
+            require(path.is_file() and metadata.is_file(),
+                    f"Missing capture receipt: {item['label']} / {platform} / {theme}")
+            receipt = read_json(metadata)
+            data = path.read_bytes()
+            size = png_size(data)
+            require(all(receipt.get(k) == v for k,v in {
+                "digest":digest, "label":item["label"], "platform":platform, "theme":theme,
+                "size":size, "viewport":item.get("viewport"),
+                "sha256":hashlib.sha256(data).hexdigest(),
+            }.items()) and isinstance(receipt.get("target"), str) and receipt["target"],
+                    f"Stale or invalid capture: {path.name}")
+            require(platform != "web" or item["kind"] != "interaction" or receipt.get("scenario"),
+                    "Web interaction capture needs a Playwright scenario; a fresh-page screenshot is insufficient")
+            targets.add(receipt["target"])
+            pair.append({**receipt, "path": str(path)})
+        require(pair[0]["size"] == pair[1]["size"] and pair[0]["sha256"] != pair[1]["sha256"],
+                f"Theme pair must have equal dimensions and distinct image content: {item['label']}")
+        captures.extend(pair)
+    require(len(targets) == 1, "All planned evidence must use the same runtime target")
+    target = next(iter(targets))
+    require(platform == "web" or any(x.get("platform") == platform and x.get("device") == target for x in preflight["ready"]),
+            "Native capture target did not pass preflight")
+    baseline_receipt = None
+    if "unavailable" in baseline:
+        require(isinstance(baseline["unavailable"], str) and baseline["unavailable"].strip(), "Explain the actual baseline blocker")
+    else:
+        before = baseline.get("digest")
+        label = baseline.get("label")
+        require(isinstance(before,str) and re.fullmatch(r"[0-9a-f]{64}",before) and before != digest and
+                isinstance(label,str) and re.fullmatch(r"[a-zA-Z0-9_-]+",label), "Invalid baseline candidate/label")
+        image = root / ".flutter-harness/previews" / before / (label+"-"+platform+"-light.png")
+        require(image.is_file() and image.with_suffix(".json").is_file(), "Missing comparable baseline capture receipt")
+        meta = read_json(image.with_suffix(".json"))
+        data = image.read_bytes()
+        first = next(x for x in captures if x["label"] == next(s["label"] for s in scenarios if s["kind"]=="screen") and x["theme"]=="light")
+        require(all(meta.get(k)==v for k,v in {"digest":before,"label":label,"platform":platform,"theme":"light",
+                "sha256":hashlib.sha256(data).hexdigest(),"size":png_size(data),"viewport":first.get("viewport")}.items()) and
+                png_size(data)==first["size"] and (platform=="web" or meta.get("target")==target),
+                "Baseline capture is stale or not comparable to final screen")
+        baseline_receipt = {**meta,"path":str(image)}
+    require(fingerprint(root) == digest, "Candidate changed while verifying images")
+    # Bind review to the exact declared plan and validated image contents.
+    evidence_digest = manifest_digest({"plan": plan, "baseline_sha256": (baseline_receipt or {}).get("sha256"), "captures": [
+        {k:v for k,v in item.items() if k != "path"} for item in captures]})
+    result = {"status":"PASS", "digest":digest, "evidence_digest":evidence_digest,
+              "captures":captures, "plan":plan, "baseline":baseline_receipt}
+    output(**result)
+    return result
 
 
 def e2e(root, platform, scenario, device):
@@ -549,7 +740,7 @@ def diagnostics(root, sessions):
     """One safe, compact report; sanitized exports are temporary."""
     summary = usage(root, sessions, emit=False)
     data = {"usage": summary, "artifacts": {}}
-    for name in ("check.json", "delivery-state.json", "delivery-result.json", "sessions.json"):
+    for name in ("check.json", "delivery-state.json", "delivery-result.json", "sessions.json", "runtime.json"):
         path = work(root) / name
         if path.is_file():
             data["artifacts"][name] = read_json(path)
@@ -563,6 +754,18 @@ def diagnostics(root, sessions):
                     for start, end in summary["session_windows"]):
                 events.append(item)
     data["events"] = events
+    # Preserve the actual status/exit of each standard check, including failed runs.
+    reports = []
+    for item in events:
+        if item.get("stage") != "check-run":
+            continue
+        directory = (root / item.get("artifacts","")).resolve()
+        if work(root).resolve() not in directory.parents:
+            continue
+        for path in directory.glob("check-*.tsv"):
+            with path.open(encoding="utf-8") as stream:
+                reports.append({"report":str(path.relative_to(root)), "checks":list(csv.DictReader(stream,delimiter="\t"))})
+    data["standard_runs"] = reports
     target = work(root) / "diagnostics.json"
     atomic_json(target, data)
     output(status="PASS", report=str(target))
@@ -573,11 +776,13 @@ def main():
     parser.add_argument("--project", default=".", type=Path)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("doctor")
-    p.add_argument("operation", choices=("check","deliver","android","ios","web","e2e"))
+    p.add_argument("operation", choices=("check","deliver","android","ios","web","e2e","visual"))
     p = sub.add_parser("begin")
     p.add_argument("branch")
-    for cmd in ("check","ci","deliver","verify","completion","status","fingerprint","stop-preview","adopt","visual-evidence"):
+    for cmd in ("check","ci","deliver","verify","completion","status","fingerprint","stop-preview","adopt"):
         sub.add_parser(cmd)
+    p = sub.add_parser("visual-evidence")
+    p.add_argument("--require-interaction", action="store_true")
     p = sub.add_parser("scaffold")
     p.add_argument("name")
     p.add_argument("layers", nargs="+", choices=("models","repositories","services","view_models","screens","widgets","use_cases"))
@@ -589,6 +794,8 @@ def main():
     p.add_argument("label")
     p.add_argument("theme", choices=("light","dark"))
     p.add_argument("--viewport", default="390,844")
+    p.add_argument("--settle", type=float, default=1.5)
+    p.add_argument("--scenario")
     p = sub.add_parser("e2e")
     p.add_argument("platform", choices=("android","ios","web"))
     p.add_argument("scenario")
@@ -635,9 +842,9 @@ def main():
         elif a.command == "launch":
             launch(root, c, a.platform, a.device)
         elif a.command == "capture":
-            capture(root, a.platform, a.label, a.theme, a.viewport)
+            capture(root, a.platform, a.label, a.theme, a.viewport, a.settle, a.scenario)
         elif a.command == "visual-evidence":
-            visual_evidence(root)
+            visual_evidence(root, a.require_interaction)
         elif a.command == "stop-preview":
             run(root, sys.executable, str(HERE / "web-preview.py"), "stop")
         elif a.command == "e2e":
@@ -651,9 +858,12 @@ def main():
                 usage(root, sessions)
         return 0
     except (Blocked, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
-        if a.command in ("check", "deliver"):
+        if a.command in ("check", "deliver", "doctor", "launch", "capture", "visual-evidence", "e2e"):
             try:
-                event(root, a.command + "-blocked", error_type=type(exc).__name__)
+                # Keep compact shareable error classifications; full command logs
+                # remain local. No arbitrary stderr, prompts or environment values.
+                event(root, a.command + "-blocked", error_type=type(exc).__name__,
+                      reason=str(exc)[:240] if isinstance(exc, Blocked) and "\\n" not in str(exc) and "exit=" not in str(exc) else "See local command log/terminal")
             except OSError:
                 pass
         print(f"BLOCKED: {exc}", file=sys.stderr)

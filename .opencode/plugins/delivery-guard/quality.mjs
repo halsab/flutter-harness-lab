@@ -63,6 +63,11 @@ export function publishing(command) {
 export function standardCheck(command) {
   return /^\s*python3[ \t]+\.flutter-harness\/bin\/harness\.py[ \t]+check[ \t]*$/.test(command || "");
 }
+export function reviewVerdict(messages) {
+  if (!Array.isArray(messages)) return "ERROR";
+  const final = [...messages].reverse().find(m => m.type === "assistant" && textOf(m.content).trim());
+  return textOf(final?.content).match(/(?:^|\n)VERDICT: (PASS|CHANGES_REQUIRED|BLOCKED|ERROR)\s*$/)?.[1] || "ERROR";
+}
 export function finalVerdict(messages, requireVisual = false) {
   if (!Array.isArray(messages)) return false;
   const final = [...messages].reverse().find(m => m.type === "assistant" && textOf(m.content).trim());
@@ -136,9 +141,13 @@ export async function candidate(root, base, request, failedNames = []) {
 
 // All evidence comes from tool hooks and the child session, not a build-agent
 // assertion or a marker file. Ordinary tasks do not launch another model.
-export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual = async () => {
-  await exec("python3", [join(root, ".flutter-harness/bin/harness.py"), "visual-evidence"], {cwd:root, timeout:60000});
-}, childStatus = async () => "") {
+export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual = async (interaction) => {
+  const args = [join(root, ".flutter-harness/bin/harness.py"), "visual-evidence"];
+  if (interaction) args.push("--require-interaction");
+  const result = JSON.parse((await exec("python3", args, {cwd:root, timeout:60000})).stdout);
+  if (result.status !== "PASS" || !result.evidence_digest) throw Error("Invalid visual evidence report");
+  return result;
+}, childStatus = async () => "", managedReview = false, reviewAvailability = async () => "") {
   const key = (id) => "quality/" + id;
   const pending = (id, call) => "quality-call/" + id + "/" + call;
   async function readState(id) { return (await ctx.storage.get(key(id))) || {}; }
@@ -156,54 +165,53 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     } catch (err) { if (err.code !== "ENOENT") throw err; }
     return { task, state, change };
   }
-  async function approved(id, state, change) {
-    if (!state.review || state.review.digest !== change.digest) return false;
+  async function approved(id, state, change, visualDigest = "") {
+    if (!state.review || state.review.digest !== change.digest || (state.review.visualDigest || "") !== visualDigest) return false;
     const child = await ctx.session.get({ sessionID: state.review.childID });
     if (child.parentID !== id || child.agent !== "reviewer" || child.outcome !== "succeeded") return false;
     if (!matchingReviewModel(child.model, change.effort)) return false;
     return finalVerdict(await ctx.session.context({ sessionID: state.review.childID }), change.reasons.includes(visualRisk));
+  }
+  async function inputs(id) {
+    const v = await view(id);
+    if (!v) throw Error("No active task for review");
+    if (v.state.passedDigest !== v.change.digest) throw Error("Complete standard check for this exact candidate before review");
+    const visual = v.change.reasons.includes(visualRisk)
+      ? await verifyVisual(explicitVisualRequest(v.task.request || "")) : null;
+    if (visual && !visual.evidence_digest) throw Error("Missing visual evidence digest");
+    return {v, visual, key: JSON.stringify([v.change.digest, visual?.evidence_digest || ""])};
   }
   async function status(id) {
     const v = await view(id);
     if (!v) return { issue: "", phase: "work", digest: "", check: "unknown" };
     const checked = v.state.passedDigest === v.change.digest;
     const check = checked ? "passed" : v.state.lastCheckFailed ? "failed" : "missing";
-    const approvedReview = checked && v.change.reasons.length > 0 &&
-      await approved(id, v.state, v.change);
-    let why = await childStatus(id) || gateReason(v.change, v.state, approvedReview);
-    if (checked && v.change.reasons.includes(visualRisk)) {
-      try { await verifyVisual(); }
-      catch { why = "Current candidate needs actual light/dark runtime capture evidence (CLI launch/capture)."; }
+    const result = {digest:v.change.digest,check,visualDigest:""};
+    if (!checked) return {...result,phase:"check",issue:gateReason(v.change,v.state,false)};
+    const waiting = await childStatus(id);
+    if (waiting) return {...result,phase:waiting.startsWith("A child dispatch")?"blocked":"waiting",issue:waiting};
+    let visual = null;
+    if (v.change.reasons.includes(visualRisk)) {
+      try {
+        visual = await verifyVisual(explicitVisualRequest(v.task.request || ""));
+        if (!visual?.evidence_digest) throw Error("Missing visual evidence digest");
+        result.visualDigest = visual.evidence_digest;
+      } catch (err) {
+        return {...result,phase:"visual",issue:"Complete planned runtime evidence before reviewer dispatch: " + String(err.stderr || err.message || err).slice(-500)};
+      }
     }
-    if (!why) return { issue: "", phase: "work", digest: v.change.digest, check };
-    const phase = !checked ? "check" : why.startsWith("Current candidate needs") ? "work" : "review";
-    const prefix = v.change.reasons.length ? "Risk gate: " + v.change.reasons.join("; ") + ". " : "";
-    const review = v.change.reasons.length ?
-      " Reviewer route: Luna #" + v.change.effort + " (" + v.change.size.files +
-      " files, " + v.change.size.lines + " changed lines). Use the read-only reviewer after successful checks; wait for its result. At most one targeted re-review." : "";
-    return { issue: prefix + why + review +
-      " Do not drop a failing acceptance test or bypass the gate.", phase, digest: v.change.digest, check };
+    if (v.change.reasons.length && !(await approved(id,v.state,v.change,result.visualDigest))) {
+      const blocked = await reviewAvailability(id, JSON.stringify([v.change.digest,result.visualDigest]));
+      return {...result,phase:blocked ? "blocked" : "review",
+        issue:blocked || "A completed independent reviewer verdict PASS for this exact diff and evidence is required. Use Luna #" + v.change.effort + "."};
+    }
+    return {...result,issue:"",phase:"work"};
   }
   async function reason(id) { return (await status(id)).issue; }
 
-  await ctx.tool.hook("execute.before", async (event) => {
+  async function prepareReview(event, input) {
+    const {v,visual} = input;
     const id = event.sessionID;
-    const checking = event.tool === "shell" && standardCheck(event.input?.command);
-    const reviewing = event.tool === "subagent" && event.input?.agent === "reviewer";
-    if (event.tool === "shell" && publishing(event.input?.command)) {
-      if (!canonicalDelivery(event.input?.command)) throw Error("Use only the canonical Harness delivery command");
-      const task = await ctx.storage.get(taskKey(id));
-      if (!task?.active) throw Error("No active root task for delivery");
-      const why = await reason(id);
-      if (why) throw Error(why);
-    }
-    if (!checking && !reviewing) return;
-    const v = await view(id);
-    if (!v) return;
-    if (checking) {
-      await ctx.storage.set(pending(id, event.id), { kind: "check", digest: v.change.digest, names: v.change.names, product: v.change.product });
-      return;
-    }
     // The normal reviewer is used, retaining its configured read-only permissions.
     // Append a short required verdict contract, not a second review prompt.
     const extra = [
@@ -213,8 +221,9 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
       "Risk flags: " + (v.change.reasons.join("; ") || "requested review"),
       v.change.removed.length ? "Tests removed after a failed run: " + v.change.removed.join("; ") : "",
       v.change.reasons.some(r => /persistent data|destructive|tests disappeared/.test(r)) ? "For rejected persistence writes, verify the real repository against a seeded storage double that rejects only the write, not a replacement empty store. Assert reload and preserved records. Reject unsupported claims, missing important assertions, and removed failing tests without a valid replacement." : "Reject unsupported claims and missing important assertions.",
-      v.change.reasons.includes(visualRisk) ? "Apply the visual acceptance checklist in .flutter-harness/templates/product/DESIGN.md. Actually open the final populated runtime captures and the baseline when available, compare at comparable viewport/content, and name the evidence and concrete differences. Inspect the visual plan, content start/density, persistent controls and secondary actions, readable long labels, selected state, changed interaction, and both themes when required. A full redesign cannot pass just because sorting works, spacing changed, or the app launches. Require a justified hierarchy and material improvement over the baseline. If required captures cannot be inspected, or a material visual defect remains, report VISUAL: CHANGES_REQUIRED followed by VERDICT: CHANGES_REQUIRED. On visual acceptance end with VISUAL: PASS on the line immediately before VERDICT: PASS. A logic-only recheck may reuse unchanged, actually inspected visual evidence. No screenshots are needed for architecture-only work." : "",
-      "End with exactly VERDICT: PASS or VERDICT: CHANGES_REQUIRED on its own last line. PASS means no unresolved material findings; if evidence is incomplete, use CHANGES_REQUIRED.",
+      v.change.reasons.includes(visualRisk) ? "Reject unjustified nonstandard Material patterns, unclear selected mode/criterion/direction, redundant persistent controls and inaccessible states as material defects. Apply the visual acceptance checklist in .flutter-harness/templates/product/DESIGN.md. Actually open the final populated runtime captures and the baseline when available, compare at comparable viewport/content, and name the evidence and concrete differences. Inspect the visual plan, content start/density, persistent controls and secondary actions, readable long labels, selected state, changed interaction, and both themes when required. A full redesign cannot pass just because sorting works, spacing changed, or the app launches. Require a justified hierarchy and material improvement over the baseline. If required captures cannot be inspected, report VERDICT: BLOCKED; if a material visual defect remains, report VISUAL: CHANGES_REQUIRED followed by VERDICT: CHANGES_REQUIRED. On visual acceptance end with VISUAL: PASS on the line immediately before VERDICT: PASS. A logic-only recheck may reuse unchanged, actually inspected visual evidence. No screenshots are needed for architecture-only work." : "",
+      visual ? "Required evidence paths (open each): " + [...visual.captures.map(x=>x.path),visual.baseline?.path].filter(Boolean).join("; ") : "",
+      "End with exactly VERDICT: PASS, VERDICT: CHANGES_REQUIRED, VERDICT: BLOCKED (missing/unreadable evidence), or VERDICT: ERROR (technical failure). Only actual product defects are CHANGES_REQUIRED. Name the missing evidence for BLOCKED.",
     ].filter(Boolean).join("\n");
     // Select the variant at the actual subagent invocation. Keep the same read-only
     // reviewer role; honor a stronger explicit Luna review but never a weaker one.
@@ -223,7 +232,24 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     const effort = (effortRank[requested] || 0) > effortRank[v.change.effort] ? requested : v.change.effort;
     event.input = { ...event.input, model: reviewModel + "#" + effort,
       prompt: (event.input.prompt || "") + "\n\n[Harness review contract]\n" + extra };
-    await ctx.storage.set(pending(id, event.id), { kind: "review", digest: v.change.digest });
+    await ctx.storage.set(pending(id, event.id), { kind: "review", digest: v.change.digest, visualDigest:visual?.evidence_digest || "" });
+  }
+  await ctx.tool.hook("execute.before", async (event) => {
+    const id = event.sessionID;
+    if (event.tool === "shell" && publishing(event.input?.command)) {
+      if (!canonicalDelivery(event.input?.command)) throw Error("Use only the canonical Harness delivery command");
+      const task = await ctx.storage.get(taskKey(id));
+      if (!task?.active) throw Error("No active root task for delivery");
+      const why = await reason(id);
+      if (why) throw Error(why);
+    }
+    if (event.tool === "subagent" && event.input?.agent === "reviewer" && !managedReview) {
+      await prepareReview(event, await inputs(id));
+    }
+    if (event.tool !== "shell" || !standardCheck(event.input?.command)) return;
+    const v = await view(id);
+    if (!v) return;
+    await ctx.storage.set(pending(id,event.id), {kind:"check",digest:v.change.digest,names:v.change.names,product:v.change.product});
   });
   await ctx.tool.hook("execute.after", async (event) => {
     const id = event.sessionID;
@@ -252,7 +278,7 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
     } else {
       const childID = event.result?.output?.sessionID || event.result?.metadata?.sessionID;
       if (typeof childID === "string" && childID) {
-        await ctx.storage.set(key(id), { ...state, review: { digest: call.digest, childID } });
+        await ctx.storage.set(key(id), { ...state, review: { digest: call.digest, visualDigest:call.visualDigest, childID } });
       }
     }
   });
@@ -270,5 +296,5 @@ export async function registerQualityGate(ctx, root, base, taskKey, verifyVisual
       event.effect = "ask";
     }
   });
-  return { reason, status, clear: (id) => ctx.storage.remove(key(id)) };
+  return { reason, status, inputs, prepareReview, clear: (id) => ctx.storage.remove(key(id)) };
 }

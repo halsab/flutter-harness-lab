@@ -7,6 +7,8 @@ additional review round. Apply proportionately.
 
 ## 1. Choose a design direction before UI code
 
+Run `python3 .flutter-harness/bin/harness.py doctor visual` before material UI edits. It probes actual simulator screenshots and Chromium availability without compiling every platform. Choose one ready target, launch the baseline and inspect it. A probe is not proof the app launches. If launch fails, inspect its unique log and try one suitable ready alternative; do not loop builds or install tools silently. Preserve the same target, width and representative fixture for baseline/final when possible.
+
 For minor changes preserve the existing visual language and adapt the
 relevant component; no new mockups. For a substantial new screen, major
 navigation/flow or redesign, establish the behavior contract (BEHAVIOR.md)
@@ -90,6 +92,36 @@ Examples across product types:
   A dashboard prioritizes meaningful decisions, not maximum card count.
   These are examples, not fixed screen templates.
 
+## Material 3 component selection (default, not a task-specific prompt)
+
+Use the current official SDK Material widgets directly and their semantic theme.
+Review the user job, state cardinality, frequency and placement before choosing
+the control. The following are defaults; justify an exception with actual UX
+needs, not styling preference:
+
+| Interaction | Preferred stock component/pattern |
+|---|---|
+| Small fixed set of mutually exclusive display modes | SegmentedButton; Tabs for distinct content destinations |
+| Independent combinable filters | FilterChip; chips for categories/tags |
+| Secondary search on a content-first screen | SearchAnchor/SearchBar opened from an accessible action; show active query and clear affordance |
+| Search as the primary job | Persistent SearchBar |
+| Main create/add action | FloatingActionButton or FilledButton according to screen job |
+| Contextual/overflow or sort menu | MenuAnchor/MenuItemButton; standard Material 3 menu rather than legacy PopupMenuButton unless justified |
+| Standard task/content row | ListTile, CheckboxListTile or stock equivalent; custom layout only for a concrete need |
+
+Do not use standalone chips to mimic a small fixed single-choice mode switch
+when SegmentedButton fits. Do not permanently show competing input fields
+without a demonstrated user need. Do not hide the currently selected mode:
+show the active filter, search query, sort criterion and direction outside the
+closed menu, with accessible names and a selected marker inside it. Prefer
+meaningful sort names describing the actual ordering (e.g. oldest first),
+not "Default". Do not silently change stored data/order or add new features
+to satisfy labels. Use representative long labels, selected/nonselected
+states and sufficient touch targets; allow responsive alternatives if needed.
+A wrong component choice or invisible active state is a material UX finding,
+even when the widget itself belongs to Material. Native here means official
+Flutter Material components, not Android Views or a third-party UI kit.
+
 ## 3. Implement and inspect
 
 The parent communicates the selected direction, interaction rules and shared
@@ -107,7 +139,11 @@ test renders cannot establish runtime visual acceptance.
 
 For substantial redesigns capture a populated final screen and a key changed
 interaction at the representative compact width, in both light and dark
-on one runtime platform. Use comparable content/viewport to the baseline
+on one runtime platform. Create ignored .flutter-harness/work/visual-plan.json before review, preferably before edits:
+
+    {"platform":"ios","fixture":"isolated realistic short/long mixed-state records","baseline":{"digest":"<baseline SHA256>","label":"baseline"},"scenarios":[{"label":"final","kind":"screen"},{"label":"changed-menu","kind":"interaction"}]}
+
+Capture baseline light on the chosen platform before source edits with CLI `capture <platform> baseline light`; record its digest and label. If baseline truly cannot be captured, use `"baseline":{"unavailable":"specific observed blocker"}` instead. The gate checks baseline hash/dimensions and matching native target when supplied; the reviewer must verify the same realistic fixture and logical viewport. Choose scenario labels for actual changed states; add affected widths/screens only when needed. For Web each scenario also declares `viewport` (e.g. `390,844`); a Web interaction requires a project-local Playwright capture scenario. Capture each label sequentially in light and dark via CLI `capture <platform> <label> <theme>` (optional `--settle 1.5`, `--scenario <path>`). Native scenarios use the installed Maestro CLI; Web Playwright tests receive HARNESS_WEB_URL, HARNESS_CAPTURE_PATH, HARNESS_CAPTURE_THEME, HARNESS_CAPTURE_VIEWPORT and HARNESS_CAPTURE_SETTLE_MS and must set viewport/theme, exercise the state, wait for stability and write the PNG. No arbitrary raw screenshot files in place of receipts. Use isolated fixture data or a dedicated test target, never erase existing records. Include enough items and long labels to exercise actual density and state; a single short row is not a populated acceptance fixture. Inspect the real interaction after animation, not a transient frame. CLI serializes native theme/capture; never run competing simulator commands. `visual-evidence` checks coverage/hashes/dimensions and distinct theme content; it cannot prove correct UI state or aesthetic quality. Reviewer must open every planned image, verify actual state/theme and compare baseline. No review dispatch before successful standard checks and visual evidence. Keep the plan stable across review; do not remove a failing required state just to satisfy the gate. Use comparable content/viewport to the baseline
 where possible; inspect wide layout when affected. Save actual image paths
 under .flutter-harness/previews/ and include them in the handoff and PR.
 Do not count a build, an empty screen or an unopened file as visual review.
@@ -147,8 +183,7 @@ only against a self-authored design contract. Name evidence inspected,
 one concrete finding per material defect and its user impact. If the
 design direction is too conservative, challenge it. Visual acceptance is
 separate from correctness; report VISUAL: PASS immediately before the final
-VERDICT: PASS for a visual task. Otherwise report VISUAL: CHANGES_REQUIRED
-and VERDICT: CHANGES_REQUIRED. A logic-only targeted recheck can reuse
+VERDICT: PASS for a visual task. For actual product defects report VISUAL: CHANGES_REQUIRED and VERDICT: CHANGES_REQUIRED. Missing or unreadable evidence is VERDICT: BLOCKED, technical execution failure VERDICT: ERROR. Do not spend an independent review on missing known prerequisites. A logic-only targeted recheck can reuse
 unchanged images after actually inspecting them. Do not retake them for
 invisible source changes. No extra design reviewer or numeric beauty score.
 Required visual evidence missing means visual acceptance is BLOCKED; do not

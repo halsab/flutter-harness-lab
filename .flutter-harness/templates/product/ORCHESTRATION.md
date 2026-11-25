@@ -172,6 +172,4 @@ Use the canonical CLI for check, runtime evidence and delivery. The
 task-plan helper validates declared dependencies and path conflicts only;
 a done label is not proof of execution. Parent must observe actual
 completed child sessions, integrate the code and run the final check.
-Reuse evidence on identical candidates. At most two reviewer attempts and
-one advisor attempt; no repeated full checks or automatic premium
-escalation. Report INCOMPLETE if required work remains blocked.
+Reuse evidence on identical candidates. Two substantive reviewer attempts, plus at most one extra after a technical BLOCKED/ERROR, with a hard cap of three dispatches and no duplicate unchanged input except one technical execution retry. Denied preflight does not spend an attempt. One advisor attempt; no repeated full checks or automatic premium escalation. Parent owns all runtime commands; do not delegate routine captures to General. Report INCOMPLETE if required work remains blocked.
