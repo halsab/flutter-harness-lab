@@ -118,27 +118,6 @@ class _TaskListScreenState extends State<TaskListScreen> {
               onPressed: _deleteCompletedTasks,
               icon: const Icon(Icons.delete_sweep_outlined),
             ),
-          Semantics(
-            identifier: 'task-sort-menu',
-            child: PopupMenuButton<TaskSort>(
-              tooltip: 'Сортировка: ${_model.sort.label}',
-              icon: const Icon(Icons.sort),
-              onSelected: _model.setSort,
-              itemBuilder: (context) => [
-                for (final sort in TaskSort.values)
-                  PopupMenuItem(
-                    value: sort,
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(sort.label)),
-                        if (_model.sort == sort)
-                          const Icon(Icons.check, size: 20),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
           const SizedBox(width: AppTokens.space8),
         ],
       ),
@@ -257,11 +236,39 @@ class _TaskListScreenState extends State<TaskListScreen> {
                                 ),
                               ),
                             ),
-                            Text(
-                              _model.sort.label,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
+                            MenuAnchor(
+                              menuChildren: [
+                                for (final sort in TaskSort.values)
+                                  MenuItemButton(
+                                    onPressed: () => _model.setSort(sort),
+                                    trailingIcon: _model.sort == sort
+                                        ? const Icon(Icons.check)
+                                        : null,
+                                    child: Text(sort.label),
+                                  ),
+                              ],
+                              builder: (context, controller, child) =>
+                                  Semantics(
+                                    identifier: 'task-sort-menu',
+                                    button: true,
+                                    label: 'Сортировка: ${_model.sort.label}',
+                                    child: TextButton.icon(
+                                      onPressed: controller.open,
+                                      icon: const Icon(
+                                        Icons.arrow_drop_down,
+                                        size: 20,
+                                      ),
+                                      label: Text(
+                                        _model.sort.label,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  ),
                             ),
                           ],
                         ),
