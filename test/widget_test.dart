@@ -14,7 +14,7 @@ Finder get _taskInputField => find.descendant(
 );
 
 Future<void> _openSort(WidgetTester tester, String selectedLabel) async {
-  await tester.tap(find.byTooltip('Сортировка: $selectedLabel'));
+  await tester.tap(find.bySemanticsIdentifier('task-sort-menu'));
   await tester.pumpAndSettle();
 }
 
