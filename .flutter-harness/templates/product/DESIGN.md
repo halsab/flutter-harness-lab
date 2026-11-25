@@ -191,3 +191,5 @@ substitute a mockup or green analyzer/test output. Report the specific gap.
 The guard checks the explicit reviewer verdict, not aesthetic truth or the
 provenance of an image; the owner still makes final aesthetic acceptance.
 Respect existing bounded recovery and publication policy.
+
+For a focused change use one baseline launch, one checked final launch, and only the required changed states. `launch auto` may reuse a prior exact native launch on the pinned device after a live device probe; this is not proof the app remains foregrounded. Inspect actual UI, use `--fresh` when necessary. For batch capture add a project-local `scenario` to every visual-plan scenario (including a deterministic screen reset/launch without clearing real data), then `capture-plan` runs both themes serially. Plan scripts before final check; do not change source during capture. Individual capture remains available for inspected live UI. Verify interaction state changes in executable widget tests and not only screenshots.

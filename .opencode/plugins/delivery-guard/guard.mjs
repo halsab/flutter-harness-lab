@@ -65,6 +65,8 @@ export function recovery(state, result, quality) {
   }
   const step = quality.phase === "check"
     ? "Diagnose the earliest failed or missing required check. Inspect its actual error, make a focused fix, run the affected check then standard once. Do not ask for push approval before checks pass."
+    : quality.phase === "manifest"
+      ? "Prepare valid delivery manifest with CLI prepare-delivery; preserve risk flags and use explicit --e2e only for required platforms. Reuse current checks and evidence."
     : quality.phase === "visual"
       ? "Complete the missing planned runtime evidence on the chosen working platform. Reuse current standard checks. Do not dispatch a reviewer until visual-evidence passes."
     : quality.phase === "review"

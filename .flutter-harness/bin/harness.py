@@ -208,6 +208,13 @@ def begin(root, c, name):
             "origin integration reference is stale")
     installed_revision(root,c,base_ref="origin/"+base)
     current = text(git(root, "symbolic-ref", "--short", "HEAD"))
+    task_path = work(root)/"task.json"
+    base_head = text(git(root,"rev-parse","origin/"+base))
+    if current == name and task_path.is_file():
+        task = read_json(task_path)
+        if all(task.get(k)==v for k,v in {"branch":name,"base_head":base_head,"revision":c["revision"]}.items()):
+            output(status="PASS",branch=name,base=base,reused=True)
+            return
     if current != name:
         git(root, "switch", "-c", name, "origin/" + base)
         for filename in ("check.json","delivery.json","delivery-result.json","delivery-state.json","runtime.json","visual-plan.json","visual-preflight.json","runtime-selection.json","sessions.json","e2e-android.json","e2e-ios.json","e2e-web.json"):
@@ -216,6 +223,7 @@ def begin(root, c, name):
             text(git(root, "rev-parse", "origin/" + base)),
             "Feature branch does not contain current integration base")
     installed_revision(root,c)
+    atomic_json(task_path,{"branch":name,"base_head":base_head,"revision":c["revision"],"baseline_digest":fingerprint(root)})
     event(root, "begin", branch=name, base=base)
     output(status="PASS", branch=name, base=base)
 
@@ -349,6 +357,52 @@ def verify(root, c):
     return pr
 
 
+def delivery_manifest(root,c):
+    """Validate before expensive acceptance/review, without staging or network."""
+    manifest = read_json(work(root)/"delivery.json")
+    for key in ("review_required","visual_required","visual_interaction"):
+        require(key not in manifest or isinstance(manifest[key],bool),"Expected boolean "+key)
+    required_e2e = manifest.get("required_e2e",[])
+    require(isinstance(required_e2e,list) and all(isinstance(p,str) and p in ("android","ios","web") for p in required_e2e)
+            and len(set(required_e2e))==len(required_e2e),"Invalid required_e2e: use [] or platform names")
+    require(c["profile"]=="mobile-web" or "web" not in required_e2e,"Web disabled")
+    for key in ("message","title","body"):
+        require(isinstance(manifest.get(key),str) and manifest[key].strip(),"Missing delivery "+key)
+    files = manifest.get("files")
+    require(isinstance(files,list) and all(isinstance(x,str) for x in files)
+            and len(files)==len(set(files)),"Expected exact task file list")
+    for path in files:
+        require(path and not Path(path).is_absolute() and Path(path).as_posix()==path
+                and ".." not in Path(path).parts and not path.startswith(("-",".git/",".flutter-harness/work/",".flutter-harness/previews/"))
+                and path!=".git","Unsafe delivery path: "+path)
+    changed = dirty(root)
+    require(not changed or set(changed)==set(files),"Dirty files differ from explicit task list; no files staged")
+    return manifest
+
+
+def prepare_delivery(root,c,a):
+    name = branch(root,c["integration_branch"])
+    files = dirty(root)
+    require(files,"No uncommitted task files; retain existing manifest for delivery recovery")
+    require(a.message.strip() and a.title.strip() and a.body.strip(),"Nonempty delivery text required")
+    manifest = {"message":a.message,"title":a.title,"body":a.body,"files":files,
+                "review_required":a.review or a.visual or a.interaction,
+                "visual_required":a.visual or a.interaction,"visual_interaction":a.interaction,
+                "required_e2e":sorted(set(a.e2e))}
+    path = work(root)/"delivery.json"
+    previous = read_json(path) if path.is_file() else {}
+    # Never silently relax declared acceptance in a retry.
+    for k in ("review_required","visual_required","visual_interaction"):
+        manifest[k] = manifest[k] or previous.get(k) is True
+    old_e2e = previous.get("required_e2e",[])
+    if isinstance(old_e2e,list) and all(isinstance(p,str) and p in ("android","ios","web") for p in old_e2e):
+        manifest["required_e2e"] = sorted(set(manifest["required_e2e"]+old_e2e))
+    atomic_json(path,manifest)
+    delivery_manifest(root,c)
+    output(status="PASS",branch=name,files=files,required_e2e=manifest["required_e2e"],
+           visual_required=manifest["visual_required"],visual_interaction=manifest["visual_interaction"])
+
+
 def deliver(root, c):
     """Called only after the OpenCode policy gate and owner publication approval.
     The receipt is workflow evidence, not an adversarial security boundary."""
@@ -357,7 +411,7 @@ def deliver(root, c):
     digest = fingerprint(root)
     require(receipt.get("status") == "PASS" and receipt.get("digest") == digest,
             "Missing/stale standard check receipt; run check")
-    manifest = read_json(work(root) / "delivery.json")
+    manifest = delivery_manifest(root,c)
     visual = visual_evidence(root,manifest.get("visual_interaction") is True,emit=False) if manifest.get("visual_required") is True or manifest.get("visual_interaction") is True else None
     required_e2e = manifest.get("required_e2e", [])
     require(isinstance(required_e2e, list) and all(p in ("android", "ios", "web") for p in required_e2e), "Invalid required_e2e")
@@ -365,22 +419,8 @@ def deliver(root, c):
         e = read_json(work(root) / ("e2e-" + platform + ".json"))
         require(e.get("status") == "PASS" and e.get("digest") == digest and e.get("platform") == platform,
                 f"Missing/stale required {platform} E2E")
-    for key in ("message", "title", "body"):
-        require(isinstance(manifest.get(key), str) and manifest[key].strip(),
-                f"Missing delivery {key}")
-    files = manifest.get("files")
-    require(isinstance(files, list) and all(isinstance(x, str) for x in files)
-            and len(files) == len(set(files)), "Expected exact task file list")
-    for path in files:
-        require(path and not Path(path).is_absolute() and
-                Path(path).as_posix() == path and ".." not in Path(path).parts and
-                not path.startswith(("-", ".git/", ".flutter-harness/work/")),
-                f"Unsafe delivery path: {path}")
+    files = manifest["files"]
     changed = dirty(root)
-    require(not changed or set(changed) == set(files),
-            "Dirty files differ from explicit task list; no files staged")
-    require(not changed or not (set(files) & {".git"}), "Unsafe Git path")
-    require(not any(p.startswith((".flutter-harness/work/", ".flutter-harness/previews/")) for p in files), "Local artifacts must not be published")
     repo = origin_repo(root)
     base = c["integration_branch"]
     # Refresh base before publishing; never merge/rebase implicitly.
@@ -586,16 +626,39 @@ def visual_preflight(root,c,only=None):
     raise Blocked("No capture-capable selected runtime target")
 
 
-def launch_auto(root,c,only=None):
+def launch_auto(root,c,only=None,fresh=False):
     """First successful launch pins the task target. No silent platform switch
     after baseline, no boot/install/reset of devices, no all-platform build."""
     pin = pinned_target(root)
     require(not pin or only in (None,pin[0]), "Required platform differs from pinned task target")
+    digest = fingerprint(root)
+    task_path = work(root)/"task.json"
+    require(task_path.is_file(),"Run begin before launch auto")
+    task = read_json(task_path)
+    require(task.get("branch")==text(git(root,"branch","--show-current")) and task.get("revision")==c["revision"],
+            "Runtime task receipt is stale; begin on the correct branch")
+    if digest != task.get("baseline_digest"):
+        checked = work(root)/"check.json"
+        require(checked.is_file() and read_json(checked).get("status")=="PASS" and
+                read_json(checked).get("digest")==digest,
+                "Run the canonical check on the changed candidate before building runtime")
     unavailable = []
     for platform,target in ([pin] if pin else runtime_targets(root,c,only)):
         try:
             dimensions = probe_runtime(root,platform,target)
-            result = launch(root,c,platform,target,preprobed=True,emit=False)
+            previous = work(root)/"runtime.json"
+            old = read_json(previous) if previous.is_file() else {}
+            # A prior successful launch proves installed candidate, not current UI.
+            # Reuse only on the pinned native device with a live screenshot probe.
+            # --fresh deliberately reinstalls/relaunches if the app was stopped,
+            # replaced, or another app is foregrounded.
+            if (not fresh and pin and platform!="web" and old.get("digest")==digest
+                    and old.get("platform")==platform and old.get("device")==target):
+                event(root,"runtime-reused",platform=platform,digest=digest)
+                result = {"status":"READY","platform":platform,"target":target,"digest":digest,
+                          "reused":True,"note":"Prior launch reused; inspect actual foreground UI or use --fresh"}
+            else:
+                result = launch(root,c,platform,target,preprobed=True,emit=False)
         except (Blocked,OSError,ValueError,subprocess.TimeoutExpired) as exc:
             unavailable.append({"platform":platform,"device":target,"reason":str(exc)[:800]})
             event(root,"runtime-target-failed",platform=platform,error_type=type(exc).__name__)
@@ -715,6 +778,41 @@ def capture(root, platform, label, theme, viewport, settle=1.5, scenario=None):
     output(status="CAPTURED", path=str(image), digest=digest)
 
 
+def capture_plan(root,c):
+    """Execute an explicit, project-specific scripted plan, serially.
+    No guessed taps, no destructive fixture creation, no model calls."""
+    plan = read_json(work(root)/"visual-plan.json")
+    platform = plan.get("platform")
+    pin = pinned_target(root)
+    require(pin and pin[0]==platform,"Plan must use the pinned runtime")
+    items = plan.get("scenarios")
+    require(isinstance(items,list) and 0<len(items)<=12,"Invalid visual scenarios")
+    labels = set()
+    for item in items:
+        require(isinstance(item,dict) and isinstance(item.get("label"),str)
+                and re.fullmatch(r"[a-zA-Z0-9_-]+",item["label"]) and item["label"] not in labels
+                and item.get("kind") in ("screen","interaction"),"Invalid or duplicate visual scenario")
+        labels.add(item["label"])
+        scenario = item.get("scenario")
+        require(isinstance(scenario,str) and scenario,"Each batch state needs a project-local scripted scenario")
+        path = Path(scenario)
+        require(not path.is_absolute() and ".." not in path.parts and (root/path).is_file()
+                and not (root/path).is_symlink(),"Invalid batch scenario")
+        require(platform!="web" or isinstance(item.get("viewport"),str) and re.fullmatch(r"\d+,\d+",item["viewport"]),
+                "Web batch scenario needs viewport")
+    digest = fingerprint(root)
+    checked = read_json(work(root)/"check.json")
+    require(checked.get("status")=="PASS" and checked.get("digest")==digest,"Check exact candidate before capture-plan")
+    runtime = read_json(work(root)/"runtime.json")
+    require(runtime.get("digest")==digest and runtime.get("platform")==platform,
+            "Run launch auto for checked candidate before capture-plan")
+    for item in items:
+        for theme in ("light","dark"):
+            capture(root,platform,item["label"],theme,item.get("viewport") or "390,844",
+                    scenario=item["scenario"])
+    visual_evidence(root,any(x["kind"]=="interaction" for x in items))
+
+
 def visual_evidence(root, require_interaction=False, *, emit=True):
     """Validate receipt coverage, not aesthetic quality or truthful UI content."""
     digest = fingerprint(root)
@@ -770,6 +868,8 @@ def visual_evidence(root, require_interaction=False, *, emit=True):
                 "sha256":hashlib.sha256(data).hexdigest(),
             }.items()) and isinstance(receipt.get("target"), str) and receipt["target"],
                     f"Stale or invalid capture: {path.name}")
+            require("scenario" not in item or receipt.get("scenario")==item["scenario"],
+                    "Capture scenario differs from planned state: "+path.name)
             require(platform != "web" or item["kind"] != "interaction" or receipt.get("scenario"),
                     "Web interaction capture needs a Playwright scenario; a fresh-page screenshot is insufficient")
             targets.add(receipt["target"])
@@ -858,7 +958,7 @@ def diagnostics(root, sessions):
     """One safe, compact report; sanitized exports are temporary."""
     summary = usage(root, sessions, emit=False)
     data = {"harness":installed_revision(root,config(root)), "usage": summary, "artifacts": {}}
-    for name in ("check.json", "delivery-state.json", "delivery-result.json", "sessions.json", "runtime.json", "runtime-selection.json"):
+    for name in ("check.json", "delivery-state.json", "delivery-result.json", "sessions.json", "runtime.json", "runtime-selection.json", "task.json"):
         path = work(root) / name
         if path.is_file():
             data["artifacts"][name] = read_json(path)
@@ -902,6 +1002,16 @@ def main():
     p.add_argument("branch")
     for cmd in ("check","ci","deliver","verify","completion","status","fingerprint","stop-preview","adopt"):
         sub.add_parser(cmd)
+    sub.add_parser("capture-plan")
+    sub.add_parser("validate-delivery")
+    p = sub.add_parser("prepare-delivery")
+    p.add_argument("--message", required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--body", required=True)
+    p.add_argument("--review", action="store_true")
+    p.add_argument("--visual", action="store_true")
+    p.add_argument("--interaction", action="store_true")
+    p.add_argument("--e2e", action="append", choices=("android","ios","web"), default=[])
     p = sub.add_parser("visual-evidence")
     p.add_argument("--require-interaction", action="store_true")
     p = sub.add_parser("scaffold")
@@ -911,6 +1021,7 @@ def main():
     p.add_argument("platform", choices=("auto","android","ios","web"))
     p.add_argument("--device")
     p.add_argument("--only", choices=("ios","android","web"))
+    p.add_argument("--fresh", action="store_true")
     p = sub.add_parser("capture")
     p.add_argument("platform", choices=("android","ios","web"))
     p.add_argument("label")
@@ -936,7 +1047,7 @@ def main():
         if a.command == "revision":
             output(**installed_revision(root,c,a.expect))
             return 0
-        if a.command in ("begin","check","ci","deliver","verify","completion","launch","capture","visual-evidence","e2e"):
+        if a.command in ("begin","check","ci","deliver","verify","completion","launch","capture","capture-plan","prepare-delivery","validate-delivery","visual-evidence","e2e"):
             installed_revision(root,c)
         if a.command == "doctor":
             doctor(root, c, a.operation, a.only)
@@ -969,10 +1080,17 @@ def main():
         elif a.command == "launch":
             if a.platform == "auto":
                 require(a.device is None,"Use HARNESS_IOS_DEVICE/HARNESS_ANDROID_DEVICE for preference")
-                launch_auto(root,c,a.only)
+                launch_auto(root,c,a.only,a.fresh)
             else:
-                require(a.only is None,"--only is for launch auto")
+                require(a.only is None and not a.fresh,"--only and --fresh are for launch auto")
                 launch(root,c,a.platform,a.device)
+        elif a.command == "prepare-delivery":
+            prepare_delivery(root,c,a)
+        elif a.command == "validate-delivery":
+            delivery_manifest(root,c)
+            output(status="PASS")
+        elif a.command == "capture-plan":
+            capture_plan(root,c)
         elif a.command == "capture":
             capture(root, a.platform, a.label, a.theme, a.viewport, a.settle, a.scenario)
         elif a.command == "visual-evidence":
@@ -990,7 +1108,7 @@ def main():
                 usage(root, sessions)
         return 0
     except (Blocked, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
-        if a.command in ("begin", "check", "deliver", "doctor", "launch", "capture", "visual-evidence", "e2e"):
+        if a.command in ("begin", "check", "deliver", "doctor", "launch", "capture", "capture-plan", "prepare-delivery", "validate-delivery", "visual-evidence", "e2e"):
             try:
                 # Keep compact shareable error classifications; full command logs
                 # remain local. No arbitrary stderr, prompts or environment values.
