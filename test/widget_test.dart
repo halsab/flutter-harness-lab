@@ -213,6 +213,45 @@ void main() {
     ]);
   });
 
+  testWidgets(
+    'matches every search word in any order and ignores extra spaces',
+    (tester) async {
+      final searchRepository = _EditableTaskRepository([
+        const TaskItem(id: 'match', title: 'Prepare weekly team meeting'),
+        const TaskItem(id: 'partial', title: 'Prepare weekly report'),
+        const TaskItem(
+          id: 'completed',
+          title: 'TEAM meeting prepare',
+          isCompleted: true,
+        ),
+      ]);
+      await tester.pumpWidget(MyApp(repository: searchRepository));
+      await tester.pumpAndSettle();
+
+      final search = find.bySemanticsIdentifier('task-search');
+      await tester.enterText(search, '  MEETING   prepare  ');
+      await tester.pump();
+      expect(find.text('Prepare weekly team meeting'), findsOneWidget);
+      expect(find.text('Prepare weekly report'), findsNothing);
+      expect(find.text('TEAM meeting prepare'), findsOneWidget);
+
+      await tester.tap(find.text('Завершённые'));
+      await tester.pumpAndSettle();
+      expect(find.text('Prepare weekly team meeting'), findsNothing);
+      expect(find.text('TEAM meeting prepare'), findsOneWidget);
+
+      await tester.tap(find.text('Все'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('По умолчанию'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('А–Я').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Prepare weekly team meeting'), findsOneWidget);
+      expect(find.text('TEAM meeting prepare'), findsOneWidget);
+      expect((await searchRepository.loadTasks()), hasLength(3));
+    },
+  );
+
   testWidgets('sorts display order without changing saved tasks', (
     tester,
   ) async {
