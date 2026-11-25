@@ -86,62 +86,81 @@ class TaskRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textStyle = Theme.of(context).textTheme.bodyLarge;
+    final colors = Theme.of(context).colorScheme;
     return Card(
-      margin: const EdgeInsets.only(bottom: AppTokens.space8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.space8,
-          vertical: AppTokens.space4,
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: task.isCompleted ? colors.surface : colors.surfaceContainerLow,
+      child: ListTile(
+        minVerticalPadding: AppTokens.space8,
+        contentPadding: const EdgeInsets.only(
+          left: AppTokens.space8,
+          right: AppTokens.space4,
         ),
-        child: Row(
-          children: [
-            Semantics(
-              identifier: 'complete-${task.id}',
-              child: Checkbox(
-                value: task.isCompleted,
-                onChanged: (isCompleted) {
-                  if (isCompleted != null) {
-                    onToggle(isCompleted);
-                  }
-                },
+        leading: Semantics(
+          identifier: 'complete-${task.id}',
+          child: Checkbox(
+            value: task.isCompleted,
+            onChanged: (done) {
+              if (done != null) onToggle(done);
+            },
+          ),
+        ),
+        title: Text(
+          task.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: task.isCompleted
+              ? textStyle?.copyWith(
+                  decoration: TextDecoration.lineThrough,
+                  color: colors.onSurfaceVariant,
+                )
+              : textStyle,
+        ),
+        trailing: PopupMenuButton<String>(
+          tooltip: 'Действия: ${task.title}',
+          onSelected: (action) {
+            switch (action) {
+              case 'edit':
+                onEdit();
+              case 'duplicate':
+                onDuplicate();
+              case 'delete':
+                onDelete();
+            }
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'edit',
+              child: Semantics(
+                identifier: 'edit-${task.id}',
+                child: const ListTile(
+                  leading: Icon(Icons.edit_outlined),
+                  title: Text('Изменить'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ),
-            const SizedBox(width: AppTokens.space8),
-            Expanded(
-              child: Text(
-                task.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: task.isCompleted
-                    ? textStyle?.copyWith(
-                        decoration: TextDecoration.lineThrough,
-                        color: Theme.of(context).colorScheme.outline,
-                      )
-                    : textStyle,
+            PopupMenuItem(
+              value: 'duplicate',
+              child: Semantics(
+                identifier: 'duplicate-${task.id}',
+                child: const ListTile(
+                  leading: Icon(Icons.content_copy_outlined),
+                  title: Text('Дублировать'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ),
-            Semantics(
-              identifier: 'edit-${task.id}',
-              child: IconButton(
-                tooltip: 'Изменить название',
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit_outlined),
-              ),
-            ),
-            Semantics(
-              identifier: 'duplicate-${task.id}',
-              child: IconButton(
-                tooltip: 'Дублировать задачу',
-                onPressed: onDuplicate,
-                icon: const Icon(Icons.content_copy_outlined),
-              ),
-            ),
-            Semantics(
-              identifier: 'delete-${task.id}',
-              child: IconButton(
-                tooltip: 'Удалить задачу',
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline),
+            PopupMenuItem(
+              value: 'delete',
+              child: Semantics(
+                identifier: 'delete-${task.id}',
+                child: const ListTile(
+                  leading: Icon(Icons.delete_outline),
+                  title: Text('Удалить'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ),
           ],

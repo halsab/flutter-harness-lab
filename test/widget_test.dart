@@ -13,6 +13,21 @@ Finder get _taskInputField => find.descendant(
   matching: find.byType(TextField),
 );
 
+Future<void> _openSort(WidgetTester tester, String selectedLabel) async {
+  await tester.tap(find.byTooltip('Сортировка: $selectedLabel'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openTaskActions(WidgetTester tester, String title) async {
+  await tester.tap(find.byTooltip('Действия: $title'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openBulkDelete(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Удалить завершённые задачи'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   late TaskRepository repository;
 
@@ -71,7 +86,7 @@ void main() {
     expect(find.text('Active task'), findsOneWidget);
     expect(find.text('Completed task'), findsNothing);
 
-    await tester.tap(find.text('Завершённые'));
+    await tester.tap(find.text('Готово'));
     await tester.pumpAndSettle();
     expect(find.text('Active task'), findsNothing);
     expect(find.text('Completed task'), findsOneWidget);
@@ -133,14 +148,14 @@ void main() {
     await tester.tap(find.text('Активные'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Удалить завершённые'));
+    await _openBulkDelete(tester);
     await tester.pumpAndSettle();
     expect(find.text('Удалить завершённые задачи?'), findsOneWidget);
     await tester.tap(find.text('Отмена'));
     await tester.pumpAndSettle();
     expect(deleteRepository.tasks, hasLength(3));
 
-    await tester.tap(find.text('Удалить завершённые'));
+    await _openBulkDelete(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Удалить').last);
     await tester.pumpAndSettle();
@@ -164,7 +179,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: failedRepository));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Удалить завершённые'));
+    await _openBulkDelete(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Удалить').last);
     await tester.pumpAndSettle();
@@ -197,7 +212,7 @@ void main() {
     expect(find.text('Read a book'), findsNothing);
     expect(find.text('Незавершённых задач: 2'), findsOneWidget);
 
-    await tester.tap(find.text('Завершённые'));
+    await tester.tap(find.text('Готово'));
     await tester.pumpAndSettle();
     expect(find.text('Buy Milk'), findsNothing);
     expect(find.text('MILK the cow'), findsOneWidget);
@@ -235,14 +250,14 @@ void main() {
       expect(find.text('Prepare weekly report'), findsNothing);
       expect(find.text('TEAM meeting prepare'), findsOneWidget);
 
-      await tester.tap(find.text('Завершённые'));
+      await tester.tap(find.text('Готово'));
       await tester.pumpAndSettle();
       expect(find.text('Prepare weekly team meeting'), findsNothing);
       expect(find.text('TEAM meeting prepare'), findsOneWidget);
 
       await tester.tap(find.text('Все'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('По умолчанию'));
+      await _openSort(tester, 'По добавлению');
       await tester.pumpAndSettle();
       await tester.tap(find.text('А–Я').last);
       await tester.pumpAndSettle();
@@ -268,15 +283,14 @@ void main() {
     expect(top('zebra'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('apple')));
 
-    await tester.tap(find.text('По умолчанию'));
+    await _openSort(tester, 'По добавлению');
     await tester.pumpAndSettle();
     await tester.tap(find.text('А–Я').last);
     await tester.pumpAndSettle();
     expect(top('apple'), lessThan(top('Banana')));
     expect(top('Banana'), lessThan(top('zebra')));
 
-    await tester.tap(find.text('А–Я').first);
-    await tester.pumpAndSettle();
+    await _openSort(tester, 'А–Я');
     await tester.tap(find.text('Я–А').last);
     await tester.pumpAndSettle();
     expect(top('zebra'), lessThan(top('Banana')));
@@ -335,6 +349,7 @@ void main() {
     expect(find.text('First task'), findsOneWidget);
     expect(find.text('Second task'), findsOneWidget);
 
+    await _openTaskActions(tester, 'Second task');
     final deleteButton = find.bySemanticsIdentifier('delete-${tasks.last.id}');
     await tester.ensureVisible(deleteButton);
     await tester.tap(deleteButton);
@@ -357,6 +372,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: editRepository));
     await tester.pumpAndSettle();
 
+    await _openTaskActions(tester, 'Current title');
     await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.pumpAndSettle();
 
@@ -377,6 +393,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Current title'), findsOneWidget);
 
+    await _openTaskActions(tester, 'Current title');
     await tester.tap(find.bySemanticsIdentifier('edit-edit-me'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'Renamed task');
@@ -404,6 +421,7 @@ void main() {
     await tester.pumpWidget(MyApp(repository: duplicateRepository));
     await tester.pumpAndSettle();
 
+    await _openTaskActions(tester, 'Duplicate me');
     final duplicateButton = find.bySemanticsIdentifier('duplicate-source');
     await tester.ensureVisible(duplicateButton);
     await tester.tap(duplicateButton);
@@ -434,7 +452,14 @@ void main() {
 
     expect(tester.widget<TextField>(_taskInputField).enabled, isFalse);
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<IconButton>(
+            find.descendant(
+              of: find.bySemanticsIdentifier('add-task'),
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
       isNull,
     );
 

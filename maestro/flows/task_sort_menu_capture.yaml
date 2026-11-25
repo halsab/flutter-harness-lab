@@ -1,0 +1,9 @@
+appId: dev.halsab.flutterHarnessLab
+name: Open the selected task sort menu for visual capture
+---
+- launchApp
+- tapOn:
+    id: task-sort-menu
+- assertVisible: "По добавлению"
+- assertVisible: "А–Я"
+- assertVisible: "Я–А"
