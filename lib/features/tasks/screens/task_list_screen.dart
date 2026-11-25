@@ -16,7 +16,6 @@ class TaskListScreen extends StatefulWidget {
 }
 
 class _TaskListScreenState extends State<TaskListScreen> {
-  final _inputController = TextEditingController();
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   bool _searchOpen = false;
@@ -46,7 +45,6 @@ class _TaskListScreenState extends State<TaskListScreen> {
   @override
   void dispose() {
     _model.removeListener(_onModelChanged);
-    _inputController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -60,16 +58,22 @@ class _TaskListScreenState extends State<TaskListScreen> {
     }
   }
 
-  void _addTask() {
-    final title = _inputController.text.trim();
-    _model.addTask(
-      title,
-      onSaved: () {
-        if (mounted && _inputController.text.trim() == title) {
-          _inputController.clear();
-        }
-      },
-      onFailure: _showWriteError,
+  void _openAddTask() {
+    if (!_model.canMutate) return;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AddTaskDialog(
+        onAdd: (title) => _model.addTask(
+          title,
+          onSaved: () {
+            if (dialogContext.mounted) {
+              Navigator.of(dialogContext).pop();
+            }
+          },
+          onFailure: _showWriteError,
+        ),
+        onCancel: () => Navigator.of(dialogContext).pop(),
+      ),
     );
   }
 
@@ -136,16 +140,31 @@ class _TaskListScreenState extends State<TaskListScreen> {
           const SizedBox(width: AppTokens.space8),
         ],
       ),
-      floatingActionButton: FloatingActionButton.small(
-        tooltip: _searchOpen ? 'Закрыть поиск' : 'Поиск задач',
-        onPressed: () {
-          if (_searchOpen) {
-            _closeSearch();
-          } else {
-            _openSearch();
-          }
-        },
-        child: Icon(_searchOpen ? Icons.close : Icons.search),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
+            tooltip: _searchOpen ? 'Закрыть поиск' : 'Поиск задач',
+            onPressed: () {
+              if (_searchOpen) {
+                _closeSearch();
+              } else {
+                _openSearch();
+              }
+            },
+            child: Icon(_searchOpen ? Icons.close : Icons.search),
+          ),
+          const SizedBox(height: AppTokens.space12),
+          Semantics(
+            identifier: 'add-task',
+            child: FloatingActionButton(
+              tooltip: 'Добавить задачу',
+              onPressed: _model.canMutate ? _openAddTask : null,
+              child: const Icon(Icons.add),
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Align(
@@ -166,41 +185,6 @@ class _TaskListScreenState extends State<TaskListScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Semantics(
-                                identifier: 'task-input',
-                                child: TextField(
-                                  controller: _inputController,
-                                  enabled: _model.canMutate,
-                                  textInputAction: TextInputAction.done,
-                                  onSubmitted: (_) => _addTask(),
-                                  decoration: InputDecoration(
-                                    hintText: 'Добавить задачу',
-                                    prefixIcon: const Icon(Icons.add_task),
-                                    filled: true,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        AppTokens.radius,
-                                      ),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: AppTokens.space8),
-                            Semantics(
-                              identifier: 'add-task',
-                              child: IconButton.filled(
-                                tooltip: 'Добавить задачу',
-                                onPressed: _model.canMutate ? _addTask : null,
-                                icon: const Icon(Icons.arrow_upward_rounded),
-                              ),
-                            ),
-                          ],
-                        ),
                         if (_searchOpen) ...[
                           const SizedBox(height: AppTokens.space12),
                           Semantics(
